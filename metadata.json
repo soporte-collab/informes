@@ -1,0 +1,5 @@
+{
+  "name": "BioSalud Analytics",
+  "description": "A comprehensive sales analytics dashboard for BioSalud pharmacies. Visualizes sales trends, product rankings, peak hours, and seller performance based on CSV data imports.",
+  "requestFramePermissions": []
+}

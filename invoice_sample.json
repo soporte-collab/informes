@@ -1,0 +1,808 @@
+{
+  "id": "134940000000263038",
+  "creationUser": {
+    "id": "1349400002",
+    "alias": "FLA",
+    "description": "DIBLASI FLAVIA"
+  },
+  "modificationUser": {
+    "id": "1349400005",
+    "alias": "FEDERICO",
+    "description": "OROPEL FEDERICO"
+  },
+  "creationDate": "2026-01-02T08:11:13.556-0300",
+  "modificationDate": "2026-01-02T08:11:18.318-0300",
+  "creationNode": {
+    "id": "2378041",
+    "code": "000.004.015.001.001",
+    "externalCode": null,
+    "name": "FCIA BIOSALUD",
+    "shortName": "FCIA BIOSALUD",
+    "type": null,
+    "status": null,
+    "updateDate": null,
+    "hierarchicalCode": "000.004.015.001.001"
+  },
+  "modificationNode": {
+    "id": "2378041",
+    "code": "000.004.015.001.001",
+    "externalCode": null,
+    "name": "FCIA BIOSALUD",
+    "shortName": "FCIA BIOSALUD",
+    "type": null,
+    "status": null,
+    "updateDate": null,
+    "hierarchicalCode": "000.004.015.001.001"
+  },
+  "status": {
+    "id": "4",
+    "name": "INGR",
+    "description": "INGRESADO",
+    "color": "NEUTRAL"
+  },
+  "externalCode": null,
+  "codification": "0001-00070695",
+  "receipt": null,
+  "emissionDate": "2026-01-02T08:11:13.556-0300",
+  "expirationDate": "2026-02-01T08:11:13.556-0300",
+  "actualizationDate": "2026-01-02T13:39:17.571-0300",
+  "mainAmount": 141700.56,
+  "generalDiscount": null,
+  "authorizationType": {
+    "id": "3",
+    "description": "CAE"
+  },
+  "authorizationNumber": "76013194505349",
+  "authorizationDate": null,
+  "authorizationExpirationDate": "2026-01-12T00:00:00.000-0300",
+  "concepts": null,
+  "valueType": {
+    "id": "197",
+    "name": "FDVP",
+    "description": "FACTURA DE VENTA",
+    "shortName": "FA VENTA P",
+    "abbreviation": "FV"
+  },
+  "subValueType": {
+    "id": "337",
+    "description": "FACTURA DE VENTA"
+  },
+  "observations": "",
+  "vatPeriod": {
+    "id": "1349400115",
+    "description": "1/2026"
+  },
+  "order": "1",
+  "operations": null,
+  "metadata": null,
+  "letter": "B",
+  "address": null,
+  "phone": null,
+  "emissionCenter": {
+    "id": "134940000000000010",
+    "code": "1",
+    "externalCode": null,
+    "name": "CE ELE BIO 01",
+    "shortName": "CE ELE BIO 01",
+    "type": "CENTROS DE EMISION",
+    "status": null,
+    "updateDate": null
+  },
+  "sourceVoucherNumber": null,
+  "periodDateFrom": null,
+  "periodDateTo": null,
+  "cancellation": null,
+  "items": [
+    {
+      "id": "134940000000584783",
+      "number": "134940000000584783",
+      "itemNumber": 1,
+      "quantity": 1,
+      "observation": null,
+      "unitPrice": 73900,
+      "costPrice": 0,
+      "discount": 0,
+      "amount": 51730,
+      "product": {
+        "id": "890114",
+        "creationUser": {
+          "id": "1",
+          "alias": "ADMINFTW",
+          "description": "ADMINISTRADOR GENERAL"
+        },
+        "modificationUser": {
+          "id": "4144",
+          "alias": "GRACIELA",
+          "description": "GRACIELA GIMENEZ"
+        },
+        "creationDate": "2008-07-07T08:05:50.724-0300",
+        "modificationDate": "2025-08-01T17:58:24.537-0300",
+        "name": "ENA WHEY X PRO VAINIL  X1000G",
+        "shortName": "WHEY X PRO VAIX1000G",
+        "description": "ENA WHEY X PRO VAINIL  X1000G",
+        "barCode": "7792981060052",
+        "dieCode": "E6010N",
+        "alfabetaCode": "42193",
+        "externalCode": null
+      },
+      "vatRate": {
+        "id": "2",
+        "name": "21%",
+        "description": "GRAVADO 21%",
+        "aliquot": 21,
+        "externalCode": "C"
+      },
+      "totalDiscount": 22170
+    },
+    {
+      "id": "134940000000584784",
+      "number": "134940000000584784",
+      "itemNumber": 2,
+      "quantity": 1,
+      "observation": null,
+      "unitPrice": 18000,
+      "costPrice": 0,
+      "discount": 0,
+      "amount": 12600,
+      "product": {
+        "id": "675852",
+        "creationUser": {
+          "id": "1",
+          "alias": "ADMINFTW",
+          "description": "ADMINISTRADOR GENERAL"
+        },
+        "modificationUser": {
+          "id": "4144",
+          "alias": "GRACIELA",
+          "description": "GRACIELA GIMENEZ"
+        },
+        "creationDate": "2005-11-04T09:51:26.974-0300",
+        "modificationDate": "2025-08-01T17:58:24.537-0300",
+        "name": "ENA BCAA 2:1:1  X 90 CAPS",
+        "shortName": "ENA BCAA 2:1:1 X 90",
+        "description": "ENA BCAA 2:1:1  X 90 CAPS",
+        "barCode": "7792981003516",
+        "dieCode": "E351",
+        "alfabetaCode": "52900",
+        "externalCode": null
+      },
+      "vatRate": {
+        "id": "2",
+        "name": "21%",
+        "description": "GRAVADO 21%",
+        "aliquot": 21,
+        "externalCode": "C"
+      },
+      "totalDiscount": 5400
+    },
+    {
+      "id": "134940000000584785",
+      "number": "134940000000584785",
+      "itemNumber": 3,
+      "quantity": 1,
+      "observation": null,
+      "unitPrice": 17000,
+      "costPrice": 0,
+      "discount": 0,
+      "amount": 11900,
+      "product": {
+        "id": "100100000000169845",
+        "creationUser": {
+          "id": "4144",
+          "alias": "GRACIELA",
+          "description": "GRACIELA GIMENEZ"
+        },
+        "modificationUser": {
+          "id": "4144",
+          "alias": "GRACIELA",
+          "description": "GRACIELA GIMENEZ"
+        },
+        "creationDate": "2024-05-22T17:01:01.124-0300",
+        "modificationDate": "2025-08-01T17:58:24.537-0300",
+        "name": "ENA MAGNESIO CITRATO CAPS X60",
+        "shortName": "ENA MAGN CIT CAPSX60",
+        "description": "ENA MAGNESIO CITRATO CAPS X60",
+        "barCode": "7792981070389",
+        "dieCode": null,
+        "alfabetaCode": "61861",
+        "externalCode": null
+      },
+      "vatRate": {
+        "id": "2",
+        "name": "21%",
+        "description": "GRAVADO 21%",
+        "aliquot": 21,
+        "externalCode": "C"
+      },
+      "totalDiscount": 5100
+    },
+    {
+      "id": "134940000000584786",
+      "number": "134940000000584786",
+      "itemNumber": 4,
+      "quantity": 1,
+      "observation": null,
+      "unitPrice": 93529.37,
+      "costPrice": 0,
+      "discount": 0,
+      "amount": 65470.56,
+      "product": {
+        "id": "100100000000161421",
+        "creationUser": {
+          "id": "5269",
+          "alias": "ZZ ALE",
+          "description": "ALEJANDRA"
+        },
+        "modificationUser": {
+          "id": "4144",
+          "alias": "GRACIELA",
+          "description": "GRACIELA GIMENEZ"
+        },
+        "creationDate": "2023-09-19T11:22:41.646-0300",
+        "modificationDate": "2025-09-30T17:24:49.610-0300",
+        "name": "FRAMINTROL ENERGY COMP X 60",
+        "shortName": "FRAMINT.ENERGY CMX60",
+        "description": "FRAMINTROL ENERGY COMP X 60",
+        "barCode": "7791763338488",
+        "dieCode": null,
+        "alfabetaCode": "61167",
+        "externalCode": null
+      },
+      "vatRate": {
+        "id": "2",
+        "name": "21%",
+        "description": "GRAVADO 21%",
+        "aliquot": 21,
+        "externalCode": "C"
+      },
+      "totalDiscount": 28058.81
+    }
+  ],
+  "agreements": [
+    {
+      "type": "cash",
+      "id": "134940000000263039",
+      "creationUser": {
+        "id": "1349400002",
+        "alias": "FLA",
+        "description": "DIBLASI FLAVIA"
+      },
+      "modificationUser": {
+        "id": "1349400005",
+        "alias": "FEDERICO",
+        "description": "OROPEL FEDERICO"
+      },
+      "creationDate": "2026-01-02T08:11:13.556-0300",
+      "modificationDate": "2026-01-02T08:11:18.346-0300",
+      "creationNode": {
+        "id": "2378041",
+        "code": "000.004.015.001.001",
+        "externalCode": null,
+        "name": "FCIA BIOSALUD",
+        "shortName": "FCIA BIOSALUD",
+        "type": null,
+        "status": null,
+        "updateDate": null,
+        "hierarchicalCode": "000.004.015.001.001"
+      },
+      "modificationNode": {
+        "id": "2378041",
+        "code": "000.004.015.001.001",
+        "externalCode": null,
+        "name": "FCIA BIOSALUD",
+        "shortName": "FCIA BIOSALUD",
+        "type": null,
+        "status": null,
+        "updateDate": null,
+        "hierarchicalCode": "000.004.015.001.001"
+      },
+      "status": {
+        "id": "43",
+        "name": "ENTR",
+        "description": "ENTREGADO",
+        "color": "NEUTRAL"
+      },
+      "externalCode": null,
+      "codification": "Efectivo",
+      "receipt": 134940000000263040,
+      "emissionDate": "2026-01-02T08:11:13.556-0300",
+      "expirationDate": "2026-02-01T08:11:13.556-0300",
+      "actualizationDate": "2026-01-02T08:11:18.323-0300",
+      "mainAmount": 0,
+      "generalDiscount": null,
+      "authorizationType": null,
+      "authorizationNumber": null,
+      "authorizationDate": null,
+      "authorizationExpirationDate": null,
+      "concepts": null,
+      "valueType": {
+        "id": "3",
+        "name": "BILLE",
+        "description": "BILLETE",
+        "shortName": "BILLETE",
+        "abbreviation": null
+      },
+      "subValueType": {
+        "id": "11",
+        "description": "BILLETE"
+      },
+      "observations": null,
+      "vatPeriod": null,
+      "order": "2",
+      "operations": null,
+      "metadata": null,
+      "effective": {
+        "id": "141",
+        "code": "23",
+        "externalCode": "CONSUMIDOR FINAL",
+        "name": "EFECTIVO",
+        "shortName": "$$$",
+        "type": "EFECTIVO",
+        "status": "ACTIVO",
+        "updateDate": "2024-07-24T15:28:56.989-0300"
+      }
+    },
+    {
+      "type": "agreement",
+      "id": "134940000000263040",
+      "creationUser": {
+        "id": "1349400002",
+        "alias": "FLA",
+        "description": "DIBLASI FLAVIA"
+      },
+      "modificationUser": {
+        "id": "1349400005",
+        "alias": "FEDERICO",
+        "description": "OROPEL FEDERICO"
+      },
+      "creationDate": "2026-01-02T08:11:13.556-0300",
+      "modificationDate": "2026-01-02T08:11:18.357-0300",
+      "creationNode": {
+        "id": "2378041",
+        "code": "000.004.015.001.001",
+        "externalCode": null,
+        "name": "FCIA BIOSALUD",
+        "shortName": "FCIA BIOSALUD",
+        "type": null,
+        "status": null,
+        "updateDate": null,
+        "hierarchicalCode": "000.004.015.001.001"
+      },
+      "modificationNode": {
+        "id": "2378041",
+        "code": "000.004.015.001.001",
+        "externalCode": null,
+        "name": "FCIA BIOSALUD",
+        "shortName": "FCIA BIOSALUD",
+        "type": null,
+        "status": null,
+        "updateDate": null,
+        "hierarchicalCode": "000.004.015.001.001"
+      },
+      "status": {
+        "id": "4",
+        "name": "INGR",
+        "description": "INGRESADO",
+        "color": "NEUTRAL"
+      },
+      "externalCode": null,
+      "codification": "9999999999999999",
+      "receipt": 134940000000263040,
+      "emissionDate": "2026-01-02T08:11:13.556-0300",
+      "expirationDate": "2026-02-01T08:11:13.556-0300",
+      "actualizationDate": "2026-01-02T08:11:18.323-0300",
+      "mainAmount": 0,
+      "generalDiscount": null,
+      "authorizationType": null,
+      "authorizationNumber": null,
+      "authorizationDate": null,
+      "authorizationExpirationDate": null,
+      "concepts": null,
+      "valueType": {
+        "id": "211",
+        "name": "CONV",
+        "description": "CONVENIO",
+        "shortName": "CONVENIO",
+        "abbreviation": ""
+      },
+      "subValueType": {
+        "id": "364",
+        "description": "CONVENIO"
+      },
+      "observations": null,
+      "vatPeriod": null,
+      "order": "3",
+      "operations": null,
+      "metadata": null,
+      "entity": {
+        "id": "134940000000000057",
+        "code": "FCIABIO",
+        "externalCode": "FCIABIO",
+        "name": "EMP BIOSALUD",
+        "shortName": "EMP BIOSALUD",
+        "type": "ENTIDADES AGRUPADORAS",
+        "status": "ACTIVO",
+        "updateDate": "2025-05-27T11:52:35.212-0300"
+      }
+    },
+    {
+      "type": "checkingAccount",
+      "id": "134940000000263041",
+      "creationUser": {
+        "id": "1349400002",
+        "alias": "FLA",
+        "description": "DIBLASI FLAVIA"
+      },
+      "modificationUser": {
+        "id": "1349400005",
+        "alias": "FEDERICO",
+        "description": "OROPEL FEDERICO"
+      },
+      "creationDate": "2026-01-02T08:11:13.556-0300",
+      "modificationDate": "2026-01-02T08:11:18.379-0300",
+      "creationNode": {
+        "id": "2378041",
+        "code": "000.004.015.001.001",
+        "externalCode": null,
+        "name": "FCIA BIOSALUD",
+        "shortName": "FCIA BIOSALUD",
+        "type": null,
+        "status": null,
+        "updateDate": null,
+        "hierarchicalCode": "000.004.015.001.001"
+      },
+      "modificationNode": {
+        "id": "2378041",
+        "code": "000.004.015.001.001",
+        "externalCode": null,
+        "name": "FCIA BIOSALUD",
+        "shortName": "FCIA BIOSALUD",
+        "type": null,
+        "status": null,
+        "updateDate": null,
+        "hierarchicalCode": "000.004.015.001.001"
+      },
+      "status": {
+        "id": "4",
+        "name": "INGR",
+        "description": "INGRESADO",
+        "color": "NEUTRAL"
+      },
+      "externalCode": null,
+      "codification": "FV B0001-00070695",
+      "receipt": 134940000000263040,
+      "emissionDate": "2026-01-02T08:11:13.556-0300",
+      "expirationDate": "2026-02-01T08:11:13.556-0300",
+      "actualizationDate": "2026-01-02T08:11:18.323-0300",
+      "mainAmount": 141700.56,
+      "generalDiscount": null,
+      "authorizationType": null,
+      "authorizationNumber": null,
+      "authorizationDate": null,
+      "authorizationExpirationDate": null,
+      "concepts": null,
+      "valueType": {
+        "id": "22",
+        "name": "CTACTE",
+        "description": "CUENTA CORRIENTE",
+        "shortName": "CTA CTE",
+        "abbreviation": ""
+      },
+      "subValueType": {
+        "id": "28",
+        "description": "CUENTA CORRIENTE"
+      },
+      "observations": null,
+      "vatPeriod": null,
+      "order": "4",
+      "operations": null,
+      "metadata": null,
+      "customer": {
+        "id": "134940000000000375",
+        "code": "42168697",
+        "externalCode": "",
+        "name": "OROPEL, FEDERICO",
+        "shortName": ".",
+        "type": "CLIENTES",
+        "status": "ACTIVO",
+        "updateDate": "2025-11-12T11:57:37.045-0300"
+      },
+      "feesPaymentPlan": {
+        "id": "21641",
+        "code": "1/1",
+        "externalCode": "1-1",
+        "name": "CUOTA 1/1",
+        "shortName": "1/1",
+        "type": "CUOTAS PLAN PAGO",
+        "status": "ACTIVO",
+        "updateDate": "2024-07-24T15:28:56.989-0300"
+      }
+    },
+    {
+      "type": "cash",
+      "id": "134940000000263039",
+      "creationUser": {
+        "id": "1349400002",
+        "alias": "FLA",
+        "description": "DIBLASI FLAVIA"
+      },
+      "modificationUser": {
+        "id": "1349400005",
+        "alias": "FEDERICO",
+        "description": "OROPEL FEDERICO"
+      },
+      "creationDate": "2026-01-02T08:11:13.556-0300",
+      "modificationDate": "2026-01-02T08:11:18.346-0300",
+      "creationNode": {
+        "id": "2378041",
+        "code": "000.004.015.001.001",
+        "externalCode": null,
+        "name": "FCIA BIOSALUD",
+        "shortName": "FCIA BIOSALUD",
+        "type": null,
+        "status": null,
+        "updateDate": null,
+        "hierarchicalCode": "000.004.015.001.001"
+      },
+      "modificationNode": {
+        "id": "2378041",
+        "code": "000.004.015.001.001",
+        "externalCode": null,
+        "name": "FCIA BIOSALUD",
+        "shortName": "FCIA BIOSALUD",
+        "type": null,
+        "status": null,
+        "updateDate": null,
+        "hierarchicalCode": "000.004.015.001.001"
+      },
+      "status": {
+        "id": "43",
+        "name": "ENTR",
+        "description": "ENTREGADO",
+        "color": "NEUTRAL"
+      },
+      "externalCode": null,
+      "codification": "Efectivo",
+      "receipt": 134940000000263040,
+      "emissionDate": "2026-01-02T08:11:13.556-0300",
+      "expirationDate": "2026-02-01T08:11:13.556-0300",
+      "actualizationDate": "2026-01-02T08:11:18.323-0300",
+      "mainAmount": 0,
+      "generalDiscount": null,
+      "authorizationType": null,
+      "authorizationNumber": null,
+      "authorizationDate": null,
+      "authorizationExpirationDate": null,
+      "concepts": null,
+      "valueType": {
+        "id": "3",
+        "name": "BILLE",
+        "description": "BILLETE",
+        "shortName": "BILLETE",
+        "abbreviation": null
+      },
+      "subValueType": {
+        "id": "11",
+        "description": "BILLETE"
+      },
+      "observations": null,
+      "vatPeriod": null,
+      "order": "2",
+      "operations": null,
+      "metadata": null,
+      "effective": {
+        "id": "141",
+        "code": "23",
+        "externalCode": "CONSUMIDOR FINAL",
+        "name": "EFECTIVO",
+        "shortName": "$$$",
+        "type": "EFECTIVO",
+        "status": "ACTIVO",
+        "updateDate": "2024-07-24T15:28:56.989-0300"
+      }
+    },
+    {
+      "type": "agreement",
+      "id": "134940000000263040",
+      "creationUser": {
+        "id": "1349400002",
+        "alias": "FLA",
+        "description": "DIBLASI FLAVIA"
+      },
+      "modificationUser": {
+        "id": "1349400005",
+        "alias": "FEDERICO",
+        "description": "OROPEL FEDERICO"
+      },
+      "creationDate": "2026-01-02T08:11:13.556-0300",
+      "modificationDate": "2026-01-02T08:11:18.357-0300",
+      "creationNode": {
+        "id": "2378041",
+        "code": "000.004.015.001.001",
+        "externalCode": null,
+        "name": "FCIA BIOSALUD",
+        "shortName": "FCIA BIOSALUD",
+        "type": null,
+        "status": null,
+        "updateDate": null,
+        "hierarchicalCode": "000.004.015.001.001"
+      },
+      "modificationNode": {
+        "id": "2378041",
+        "code": "000.004.015.001.001",
+        "externalCode": null,
+        "name": "FCIA BIOSALUD",
+        "shortName": "FCIA BIOSALUD",
+        "type": null,
+        "status": null,
+        "updateDate": null,
+        "hierarchicalCode": "000.004.015.001.001"
+      },
+      "status": {
+        "id": "4",
+        "name": "INGR",
+        "description": "INGRESADO",
+        "color": "NEUTRAL"
+      },
+      "externalCode": null,
+      "codification": "9999999999999999",
+      "receipt": 134940000000263040,
+      "emissionDate": "2026-01-02T08:11:13.556-0300",
+      "expirationDate": "2026-02-01T08:11:13.556-0300",
+      "actualizationDate": "2026-01-02T08:11:18.323-0300",
+      "mainAmount": 0,
+      "generalDiscount": null,
+      "authorizationType": null,
+      "authorizationNumber": null,
+      "authorizationDate": null,
+      "authorizationExpirationDate": null,
+      "concepts": null,
+      "valueType": {
+        "id": "211",
+        "name": "CONV",
+        "description": "CONVENIO",
+        "shortName": "CONVENIO",
+        "abbreviation": ""
+      },
+      "subValueType": {
+        "id": "364",
+        "description": "CONVENIO"
+      },
+      "observations": null,
+      "vatPeriod": null,
+      "order": "3",
+      "operations": null,
+      "metadata": null,
+      "entity": {
+        "id": "134940000000000057",
+        "code": "FCIABIO",
+        "externalCode": "FCIABIO",
+        "name": "EMP BIOSALUD",
+        "shortName": "EMP BIOSALUD",
+        "type": "ENTIDADES AGRUPADORAS",
+        "status": "ACTIVO",
+        "updateDate": "2025-05-27T11:52:35.212-0300"
+      }
+    },
+    {
+      "type": "checkingAccount",
+      "id": "134940000000263041",
+      "creationUser": {
+        "id": "1349400002",
+        "alias": "FLA",
+        "description": "DIBLASI FLAVIA"
+      },
+      "modificationUser": {
+        "id": "1349400005",
+        "alias": "FEDERICO",
+        "description": "OROPEL FEDERICO"
+      },
+      "creationDate": "2026-01-02T08:11:13.556-0300",
+      "modificationDate": "2026-01-02T08:11:18.379-0300",
+      "creationNode": {
+        "id": "2378041",
+        "code": "000.004.015.001.001",
+        "externalCode": null,
+        "name": "FCIA BIOSALUD",
+        "shortName": "FCIA BIOSALUD",
+        "type": null,
+        "status": null,
+        "updateDate": null,
+        "hierarchicalCode": "000.004.015.001.001"
+      },
+      "modificationNode": {
+        "id": "2378041",
+        "code": "000.004.015.001.001",
+        "externalCode": null,
+        "name": "FCIA BIOSALUD",
+        "shortName": "FCIA BIOSALUD",
+        "type": null,
+        "status": null,
+        "updateDate": null,
+        "hierarchicalCode": "000.004.015.001.001"
+      },
+      "status": {
+        "id": "4",
+        "name": "INGR",
+        "description": "INGRESADO",
+        "color": "NEUTRAL"
+      },
+      "externalCode": null,
+      "codification": "FV B0001-00070695",
+      "receipt": 134940000000263040,
+      "emissionDate": "2026-01-02T08:11:13.556-0300",
+      "expirationDate": "2026-02-01T08:11:13.556-0300",
+      "actualizationDate": "2026-01-02T08:11:18.323-0300",
+      "mainAmount": 141700.56,
+      "generalDiscount": null,
+      "authorizationType": null,
+      "authorizationNumber": null,
+      "authorizationDate": null,
+      "authorizationExpirationDate": null,
+      "concepts": null,
+      "valueType": {
+        "id": "22",
+        "name": "CTACTE",
+        "description": "CUENTA CORRIENTE",
+        "shortName": "CTA CTE",
+        "abbreviation": ""
+      },
+      "subValueType": {
+        "id": "28",
+        "description": "CUENTA CORRIENTE"
+      },
+      "observations": null,
+      "vatPeriod": null,
+      "order": "4",
+      "operations": null,
+      "metadata": null,
+      "customer": {
+        "id": "134940000000000375",
+        "code": "42168697",
+        "externalCode": "",
+        "name": "OROPEL, FEDERICO",
+        "shortName": ".",
+        "type": "CLIENTES",
+        "status": "ACTIVO",
+        "updateDate": "2025-11-12T11:57:37.045-0300"
+      },
+      "feesPaymentPlan": {
+        "id": "21641",
+        "code": "1/1",
+        "externalCode": "1-1",
+        "name": "CUOTA 1/1",
+        "shortName": "1/1",
+        "type": "CUOTAS PLAN PAGO",
+        "status": "ACTIVO",
+        "updateDate": "2024-07-24T15:28:56.989-0300"
+      }
+    }
+  ],
+  "fiscalType": "E",
+  "customer": {
+    "id": "134940000000000375",
+    "code": "42168697",
+    "externalCode": "",
+    "name": "OROPEL, FEDERICO",
+    "shortName": ".",
+    "type": "CLIENTES",
+    "status": "ACTIVO",
+    "updateDate": "2025-11-12T11:57:37.045-0300",
+    "cuit": "",
+    "companyName": "",
+    "address": null,
+    "modificationDate": "2025-11-12T11:57:37.052-0300",
+    "vatSituation": {
+      "id": "3",
+      "name": "CONS.FINAL",
+      "description": "CONSUMIDOR FINAL",
+      "externalCode": "C"
+    },
+    "firstName": "OROPEL, FEDERICO",
+    "lastName": "OROPEL",
+    "documentType": "DNI",
+    "documentNumber": "42168697",
+    "email": "FEDERICOOROPEL@YAHOO.COM",
+    "groupingEntity": null
+  }
+}
