@@ -7,6 +7,7 @@ interface StatsCardProps {
   icon: React.ReactNode;
   trend?: string;
   trendUp?: boolean;
+  subValue?: string;
   color?: 'blue' | 'green' | 'red' | 'orange' | 'purple' | 'gray';
   onClick?: () => void;
   isActive?: boolean;
@@ -27,6 +28,7 @@ export const StatsCard: React.FC<StatsCardProps> = ({
   icon,
   trend,
   trendUp,
+  subValue,
   color = "blue",
   onClick,
   isActive = false
@@ -49,7 +51,12 @@ export const StatsCard: React.FC<StatsCardProps> = ({
         </div>
       </div>
       <div className="flex items-end justify-between">
-        <h3 className="text-2xl font-bold text-gray-900">{value}</h3>
+        <div>
+          <h3 className="text-2xl font-bold text-gray-900">{value}</h3>
+          {subValue && (
+            <p className="text-xs font-medium text-gray-400 mt-1">{subValue}</p>
+          )}
+        </div>
         {trend && (
           <div className={`flex items-center text-sm ${trendUp ? 'text-green-600' : 'text-red-600'}`}>
             {trendUp ? <ArrowUpRight className="w-4 h-4 mr-1" /> : <ArrowDownRight className="w-4 h-4 mr-1" />}

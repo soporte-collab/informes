@@ -15,6 +15,9 @@ export interface RawCsvRow {
   "Obs": string;
   "Cliente": string;
   "Entidad": string; // We will focus on this one
+  "_inheritedDate"?: string;
+  "_inheritedNode"?: string;
+  "_inheritedEntity"?: string;
 }
 
 export interface SaleRecord {
@@ -34,6 +37,8 @@ export interface SaleRecord {
   entity: string; // Changed from client to entity for broader filtering
   paymentMethod?: string; // Derived from Invoice
   barcode?: string;
+  cost?: number;
+  stockBalance?: number;
 }
 
 // --- NEW TYPES FOR ADVANCED INVOICE DASHBOARD ---
@@ -129,6 +134,8 @@ export interface ExpenseItem {
   price: number;
   category: string;
   manufacturer: string;
+  discountEntity?: number; // A cargo de OS/Seguro para este item
+  discountClient?: number; // A cargo de Cliente para este item
 }
 
 export interface ExpenseRecord {
@@ -157,4 +164,96 @@ export interface CurrentAccountRecord {
   credit: number;
   balance: number;
   branch?: string;
+}
+
+export interface RawInsuranceRow {
+  "Entidad": string;
+  "Codificacion": string;
+  "TipoValor": string;
+  "EntSec": string;
+  "Monto": string;
+  "FechaEmision": string;
+  "FechaVenc": string;
+  "Nodo": string;
+  "Estado": string;
+  "Transmision": string;
+  "TipoOperacion": string;
+}
+
+export interface InsuranceRecord {
+  id: string;
+  entity: string;
+  code: string;
+  type: string;
+  amount: number;
+  totalVoucher?: number; // Total de la receta
+  discountEntity?: number; // A cargo de OS
+  discountClient?: number; // A cargo de Cliente
+  issueDate: Date;
+  dueDate: Date;
+  branch: string;
+  status: string;
+  operationType: string;
+  monthYear: string;
+  items: ExpenseItem[];
+}
+
+export interface StockRecord {
+  id: string;
+  productName: string;
+  barcode: string;
+  date: Date;
+  location: string;
+  movementType: string;
+  units: number;
+  currentStock: number;
+  costPrice: number;
+  salePrice: number;
+  manufacturer: string;
+  branch: string;
+  invoiceNumber?: string;
+  seller?: string;
+  entity?: string;
+}
+
+export interface UnifiedItem {
+  barcode: string;
+  name: string;
+  quantity: number;
+  unitPrice: number;
+  unitCost: number;
+  totalPrice: number;
+  totalCost: number;
+  profit: number;
+  manufacturer: string;
+  category: string;
+}
+
+export interface UnifiedTransaction {
+  id: string; // Composite key or Invoice Number
+  invoiceNumber: string;
+  type: string; // FV, NC, TX, etc.
+  date: Date;
+  branch: string;
+  seller: string;
+  client: string;
+  entity: string; // Mutual/Obra Social
+  paymentMethod: string;
+  totalNet: number; // From Financial record
+  totalGross: number;
+  totalDiscount: number;
+  items: UnifiedItem[];
+  hasStockDetail: boolean;
+  hasFinancialDetail: boolean;
+}
+
+export interface UniversalSyncResult {
+  sales: SaleRecord[];
+  invoices: InvoiceRecord[];
+  unified: UnifiedTransaction[];
+  expenses: ExpenseRecord[];
+  services: ExpenseRecord[];
+  insurance: InsuranceRecord[];
+  currentAccounts: CurrentAccountRecord[];
+  stock: StockRecord[];
 }

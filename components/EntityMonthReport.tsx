@@ -8,27 +8,37 @@ import { X, Printer, Package, Building2, Calendar, FileText, Download } from 'lu
 
 interface EntityMonthReportProps {
     data: SaleRecord[];
-    entityName: string;
+    entityName: string; // Used for Entity OR Client name
     month: string;
     onClose: () => void;
+    isClientReport?: boolean;
 }
 
 export const EntityMonthReport: React.FC<EntityMonthReportProps> = ({
     data,
     entityName,
     month,
-    onClose
+    onClose,
+    isClientReport
 }) => {
     useEffect(() => {
         document.body.classList.add('entity-report-active');
         return () => document.body.classList.remove('entity-report-active');
     }, []);
 
-    // Filter data for the specific entity and month
+    // Filter data for the specific entity/client and month
     const filteredProducts = useMemo(() => {
         const stats = new Map<string, { category: string, qty: number, total: number, lastPrice: number }>();
 
-        data.forEach(s => {
+        (data || []).forEach(s => {
+            // Filter logic
+            if (isClientReport) {
+                if (s.client !== entityName) return;
+            } else {
+                if (s.entity !== entityName) return;
+            }
+            if (s.monthYear !== month) return;
+
             const key = `${s.productName}|${s.category || 'Otros'}`;
             const current = stats.get(key) || { category: s.category || 'Otros', qty: 0, total: 0, lastPrice: 0 };
             stats.set(key, {
@@ -42,7 +52,7 @@ export const EntityMonthReport: React.FC<EntityMonthReportProps> = ({
         return Array.from(stats.entries())
             .map(([key, stat]) => ({ name: key.split('|')[0], ...stat }))
             .sort((a, b) => b.total - a.total);
-    }, [data]);
+    }, [data, entityName, month, isClientReport]);
 
     const totals = useMemo(() => {
         return filteredProducts.reduce((acc, curr) => ({
@@ -74,7 +84,7 @@ export const EntityMonthReport: React.FC<EntityMonthReportProps> = ({
         const link = document.createElement('a');
         const url = URL.createObjectURL(blob);
         link.setAttribute('href', url);
-        link.setAttribute('download', `Auditoria_${entityName.replace(/\s+/g, '_')}_${month}.csv`);
+        link.setAttribute('download', `Auditoria_${isClientReport ? 'Cliente' : 'Entidad'}_${entityName.replace(/\s+/g, '_')}_${month}.csv`);
         link.style.visibility = 'hidden';
         document.body.appendChild(link);
         link.click();
@@ -93,7 +103,7 @@ export const EntityMonthReport: React.FC<EntityMonthReportProps> = ({
                         <X className="w-6 h-6" />
                     </button>
                     <div>
-                        <h2 className="font-bold">Reporte de Auditoría por Entidad</h2>
+                        <h2 className="font-bold">Reporte de Auditoría por {isClientReport ? 'Cliente' : 'Entidad'}</h2>
                         <p className="text-xs text-gray-400">Vista Previa: {entityName} ({month})</p>
                     </div>
                 </div>
@@ -132,7 +142,7 @@ export const EntityMonthReport: React.FC<EntityMonthReportProps> = ({
                         <div className="flex flex-col gap-1">
                             <p className="text-sm flex items-center gap-2 text-gray-600">
                                 <Building2 className="w-4 h-4 text-blue-500" />
-                                <span className="font-bold">ENTIDAD:</span> {entityName}
+                                <span className="font-bold">{isClientReport ? 'CLIENTE:' : 'ENTIDAD:'}</span> {entityName}
                             </p>
                             <p className="text-sm flex items-center gap-2 text-gray-600">
                                 <Calendar className="w-4 h-4 text-blue-500" />

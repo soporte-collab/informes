@@ -29,19 +29,19 @@ export const CurrentAccountDashboard: React.FC<Props> = ({ data }) => {
     }, [data]);
 
     const entities = useMemo(() => {
-        return Array.from(new Set(data.map(d => d.entity))).filter(Boolean).sort();
+        return Array.from(new Set((data || []).map(d => d.entity))).filter(Boolean).sort();
     }, [data]);
 
     const branches = useMemo(() => {
-        return Array.from(new Set(data.filter(d => d.branch).map(d => d.branch!))).filter(Boolean).sort();
+        return Array.from(new Set((data || []).filter(d => d.branch).map(d => d.branch!))).filter(Boolean).sort();
     }, [data]);
 
     const types = useMemo(() => {
-        return Array.from(new Set(data.map(d => d.type))).filter(Boolean).sort();
+        return Array.from(new Set((data || []).map(d => d.type))).filter(Boolean).sort();
     }, [data]);
 
     const filteredData = useMemo(() => {
-        const filtered = data.filter(d => {
+        const filtered = (data || []).filter(d => {
             // 1. Search Filter
             const searchStr = `${d.entity || ''} ${d.reference || ''} ${d.type || ''} ${d.description || ''}`.toLowerCase();
             const matchSearch = searchTerm === '' || searchStr.includes(searchTerm.toLowerCase());

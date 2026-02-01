@@ -8,7 +8,7 @@ import { formatMoney } from '../utils/dataHelpers';
 import {
     TrendingUp, Calendar, CreditCard, Users, Filter,
     Package, Clock, Search, ChevronDown, ChevronRight,
-    X, CheckCircle, Ban, ListFilter, AlertCircle, Lightbulb, Droplets, Zap, FileText
+    X, CheckCircle, Ban, ListFilter, AlertCircle, Lightbulb, Droplets, Zap, FileText, ArrowRightLeft
 } from 'lucide-react';
 import { format, isWithinInterval } from 'date-fns';
 import { getMetadata, saveMetadata } from '../utils/db';
@@ -19,6 +19,9 @@ interface Props {
     endDate: string;
     onStartDateChange: (date: string) => void;
     onEndDateChange: (date: string) => void;
+    selectedBranch: string;
+    onSelectBranch: (branch: string) => void;
+    onUpload?: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }
 
 const COLORS = ['#3b82f6', '#06b6d4', '#8b5cf6', '#10b981', '#ef4444', '#f59e0b', '#f97316', '#ec4899'];
@@ -28,14 +31,16 @@ export const ServicesDashboard: React.FC<Props> = ({
     startDate,
     endDate,
     onStartDateChange,
-    onEndDateChange
+    onEndDateChange,
+    selectedBranch,
+    onSelectBranch,
+    onUpload
 }) => {
     const [searchTerm, setSearchTerm] = useState('');
-    const [selectedBranch, setSelectedBranch] = useState('all');
+    // const [selectedBranch, setSelectedBranch] = useState('all');
     const [selectedMonth, setSelectedMonth] = useState('all');
     const [selectedStatus, setSelectedStatus] = useState('all');
-    // const [startDate, setStartDate] = useState('');
-    // const [endDate, setEndDate] = useState('');
+    const [viewMode, setViewMode] = useState<'LIVE' | 'HISTORIC' | 'OFFLINE'>('LIVE');
     const [includedSuppliers, setIncludedSuppliers] = useState<string[]>([]);
     const [showFilters, setShowFilters] = useState(false);
     const [expandedInvoiceId, setExpandedInvoiceId] = useState<string | null>(null);
@@ -53,13 +58,18 @@ export const ServicesDashboard: React.FC<Props> = ({
     }, []);
 
     const suppliers = useMemo(() => {
-        return Array.from(new Set(data.map(d => d.supplier))).sort();
-    }, [data]);
+        // Only show suppliers that ARE categorized as services
+        return Array.from(new Set(data.map(d => d.supplier)))
+            .filter(s => supplierCategories[s])
+            .sort();
+    }, [data, supplierCategories]);
 
     const months = useMemo(() => {
-        const uniqueMonths = Array.from(new Set(data.map(d => d.monthYear))).sort().reverse();
+        // Filter months based on filtered data (suppliers in services) to be cleaner
+        const serviceData = data.filter(d => supplierCategories[d.supplier]);
+        const uniqueMonths = Array.from(new Set(serviceData.map(d => d.monthYear))).sort().reverse();
         return uniqueMonths;
-    }, [data]);
+    }, [data, supplierCategories]);
 
     const statuses = useMemo(() => {
         return Array.from(new Set(data.map(d => d.status))).sort();
@@ -67,12 +77,21 @@ export const ServicesDashboard: React.FC<Props> = ({
 
     const filteredData = useMemo(() => {
         return data.filter(d => {
-            const category = supplierCategories[d.supplier] || '';
+            // STRICT FILTER: Check if supplier is categorized as service OR source is manual
+            const category = supplierCategories[d.supplier];
+            const isManual = (d as any).source === 'manual_csv';
+
+            if (!category && !isManual) return false; // If not in service_categories and not manual, it belongs to Expenses Dashboard
+
             const matchSearch = d.supplier.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 d.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                category.toLowerCase().includes(searchTerm.toLowerCase());
+                category.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                d.items?.some(item =>
+                    item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    item.category.toLowerCase().includes(searchTerm.toLowerCase())
+                );
 
-            const matchBranch = selectedBranch === 'all' || d.branch === selectedBranch;
+            const matchBranch = selectedBranch === 'all' || d.branch.toLowerCase().includes(selectedBranch.toLowerCase());
             const matchMonth = selectedMonth === 'all' || d.monthYear === selectedMonth;
             const matchStatus = selectedStatus === 'all' || d.status === selectedStatus;
 
@@ -88,7 +107,7 @@ export const ServicesDashboard: React.FC<Props> = ({
 
             return matchSearch && matchBranch && matchMonth && matchDate && matchSupplier && matchStatus;
         });
-    }, [data, searchTerm, selectedBranch, selectedMonth, selectedStatus, startDate, endDate, includedSuppliers]);
+    }, [data, searchTerm, selectedBranch, selectedMonth, selectedStatus, startDate, endDate, includedSuppliers, supplierCategories]);
 
     const stats = useMemo(() => {
         let gross = 0;
@@ -151,11 +170,17 @@ export const ServicesDashboard: React.FC<Props> = ({
         // Decidimos no limpiarlos para que pueda aplicar otra categoría si quiere
     };
 
-    const clearCategory = (supplier: string) => {
+    const clearCategory = async (supplier: string) => {
+        if (!window.confirm(`¿Quitar al proveedor "${supplier}" de Servicios?\nVolverá a aparecer en el listado de Facturas de Proveedores.`)) return;
+
         const updated = { ...supplierCategories };
         delete updated[supplier];
         setSupplierCategories(updated);
-        saveMetadata('service_categories', updated);
+        await saveMetadata('service_categories', updated);
+        // Remove from includedSuppliers if present to avoid UI glitches
+        if (includedSuppliers.includes(supplier)) {
+            toggleSupplier(supplier);
+        }
     };
 
     return (
@@ -181,6 +206,23 @@ export const ServicesDashboard: React.FC<Props> = ({
                             <ListFilter className="w-4 h-4" />
                             Filtros de Servicios
                         </button>
+
+                        {onUpload && (
+                            <div className="relative">
+                                <input
+                                    type="file"
+                                    accept=".csv,.txt"
+                                    onChange={onUpload}
+                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                />
+                                <button
+                                    className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-all uppercase tracking-tight"
+                                >
+                                    <FileText className="w-4 h-4" />
+                                    Importar CSV
+                                </button>
+                            </div>
+                        )}
                     </div>
                 </div>
 
@@ -203,10 +245,11 @@ export const ServicesDashboard: React.FC<Props> = ({
                                 <select
                                     className="w-full bg-gray-50 border border-gray-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-bold text-gray-700"
                                     value={selectedBranch}
-                                    onChange={(e) => setSelectedBranch(e.target.value)}
+                                    onChange={(e) => onSelectBranch(e.target.value)}
                                 >
                                     <option value="all">Todas las Sucursales</option>
-                                    {branches.map(b => <option key={b} value={b}>{b}</option>)}
+                                    <option value="FCIA BIOSALUD">FCIA BIOSALUD</option>
+                                    <option value="CHACRAS">CHACRAS PARK</option>
                                 </select>
                             </div>
                             <div>
@@ -217,7 +260,9 @@ export const ServicesDashboard: React.FC<Props> = ({
                                     onChange={(e) => setSelectedStatus(e.target.value)}
                                 >
                                     <option value="all">Todos los Estados</option>
-                                    {statuses.map(s => <option key={s} value={s}>{s}</option>)}
+                                    {statuses.map(s => <option key={typeof s === 'object' ? (s as any).id : s} value={typeof s === 'object' ? (s as any).name : s}>
+                                        {typeof s === 'object' ? (s as any).name : s}
+                                    </option>)}
                                 </select>
                             </div>
                         </div>
@@ -245,7 +290,7 @@ export const ServicesDashboard: React.FC<Props> = ({
                                     setSelectedMonth('all');
                                     setSelectedStatus('all');
                                     setIncludedSuppliers([]);
-                                    setSelectedBranch('all');
+                                    onSelectBranch('all');
                                 }}
                                 className="text-xs text-blue-600 hover:underline font-bold block mt-2"
                             >
@@ -423,9 +468,18 @@ export const ServicesDashboard: React.FC<Props> = ({
                                         <div className="flex flex-col">
                                             <span>{record.supplier}</span>
                                             {supplierCategories[record.supplier] && (
-                                                <span className="text-[10px] text-blue-500 font-black uppercase tracking-tighter">
-                                                    #{supplierCategories[record.supplier]}
-                                                </span>
+                                                <div className="flex items-center gap-1">
+                                                    <span className="text-[10px] text-blue-500 font-black uppercase tracking-tighter">
+                                                        #{supplierCategories[record.supplier]}
+                                                    </span>
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); clearCategory(record.supplier); }}
+                                                        className="opacity-0 group-hover:opacity-100 p-1 bg-gray-100 hover:bg-red-100 text-gray-400 hover:text-red-600 rounded transition-all"
+                                                        title="Quitar de Servicios"
+                                                    >
+                                                        <ArrowRightLeft className="w-3 h-3" />
+                                                    </button>
+                                                </div>
                                             )}
                                         </div>
                                     </td>
@@ -435,7 +489,7 @@ export const ServicesDashboard: React.FC<Props> = ({
                                         <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${record.status === 'PAGADO' ? 'bg-green-50 text-green-600 border border-green-100' :
                                             'bg-orange-50 text-orange-600 border border-orange-100'
                                             }`}>
-                                            {record.status}
+                                            {typeof record.status === 'object' ? (record.status as any).name || (record.status as any).description : record.status}
                                         </span>
                                     </td>
                                 </tr>

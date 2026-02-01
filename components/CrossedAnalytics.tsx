@@ -112,10 +112,10 @@ export const CrossedAnalytics: React.FC<CrossedAnalyticsProps> = ({
         };
 
         return {
-            sales: salesData.filter(s => branchFilter(s.branch) && dateFilter(s.date)),
-            invoices: invoiceData.filter(i => branchFilter(i.branch) && dateFilter(i.date)),
-            expenses: expenseData.filter(e => branchFilter(e.branch) && dateFilter(e.issueDate)),
-            services: serviceData.filter(s => branchFilter(s.branch) && dateFilter(s.issueDate))
+            sales: (salesData || []).filter(s => branchFilter(s.branch) && dateFilter(s.date)),
+            invoices: (invoiceData || []).filter(i => branchFilter(i.branch) && dateFilter(i.date)),
+            expenses: (expenseData || []).filter(e => branchFilter(e.branch) && dateFilter(e.issueDate)),
+            services: (serviceData || []).filter(s => branchFilter(s.branch) && dateFilter(s.issueDate))
         };
     }, [salesData, invoiceData, expenseData, serviceData, selectedBranch, startDate, endDate]);
 

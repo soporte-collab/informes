@@ -13,40 +13,61 @@ const formatZettiDate = (dateStr: string, isEnd: boolean = false) => {
     return isEnd ? `${dateStr}T23:59:59.999Z` : `${dateStr}T00:00:00.000Z`;
 };
 
-export const callZettiAPI = async (type: string, payload: any, nodeId: string = '2378041'): Promise<any> => {
-    return new Promise(async (resolve, reject) => {
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+export const callZettiAPI = async (type: string, payload: any, nodeId: string = '2378041', retries: number = 2): Promise<any> => {
+    let lastError: any = null;
+
+    for (let i = 0; i <= retries; i++) {
         try {
-            const queryRef = await addDoc(collection(db, 'zetti_queries'), {
-                type,
-                payload,
-                nodeId,
-                timestamp: serverTimestamp()
-            });
+            if (i > 0) {
+                console.warn(`[ZETTI RETRY] Intento ${i} para ${type}...`);
+                await sleep(1000 * i); // Exponential-ish backoff
+            }
 
-            const queryId = queryRef.id;
-            const responseRef = doc(db, 'zetti_responses', queryId);
+            return await new Promise(async (resolve, reject) => {
+                try {
+                    const queryRef = await addDoc(collection(db, 'zetti_queries'), {
+                        type,
+                        payload,
+                        nodeId,
+                        timestamp: serverTimestamp()
+                    });
 
-            const unsubscribe = onSnapshot(responseRef, (snap) => {
-                if (snap.exists()) {
-                    const responseData = snap.data();
-                    if (responseData.status === 'SUCCESS') {
+                    const queryId = queryRef.id;
+                    const responseRef = doc(db, 'zetti_responses', queryId);
+
+                    const unsubscribe = onSnapshot(responseRef, (snap) => {
+                        if (snap.exists()) {
+                            const responseData = snap.data();
+                            if (responseData.status === 'SUCCESS') {
+                                unsubscribe();
+                                resolve(responseData.data);
+                            } else if (responseData.status === 'ERROR') {
+                                unsubscribe();
+                                reject(new Error(responseData.message || `Error en respuesta Zetti (${responseData.code || 500})`));
+                            }
+                        }
+                    });
+
+                    setTimeout(() => {
                         unsubscribe();
-                        resolve(responseData.data);
-                    } else if (responseData.status === 'ERROR') {
-                        unsubscribe();
-                        reject(new Error(responseData.message || 'Error en respuesta Zetti'));
-                    }
+                        reject(new Error(`Timeout Zetti API (${queryId})`));
+                    }, 60000); // Reduce timeout to 60s per attempt to trigger retry faster
+                } catch (error) {
+                    reject(error);
                 }
             });
-
-            setTimeout(() => {
-                unsubscribe();
-                reject(new Error(`Timeout Zetti API (${queryId})`));
-            }, 180000);
-        } catch (error) {
-            reject(error);
+        } catch (error: any) {
+            lastError = error;
+            // Only retry on certain errors (status 500, timeouts, etc)
+            // If it's a 400 or something else, maybe don't retry? 
+            // For now, let's retry any error to be safe as per user request.
+            console.error(`[ZETTI ERROR] Intento ${i} falló:`, error.message);
         }
-    });
+    }
+
+    throw lastError || new Error(`Error fatal tras ${retries} reintentos en ${type}`);
 };
 
 export const searchZettiInvoices = async (startDate: string, endDate: string, nodeId: string, lightMode: boolean = false) => {
@@ -96,4 +117,16 @@ export const searchZettiProductByDescription = async (description: string, nodeI
 
 export const searchZettiMultiStock = async (productIds: string[]) => {
     return callZettiAPI('MASSIVE_STOCK_CHECK', { productIds }, ZETTI_NODES.CONCENTRADOR);
+};
+
+export const searchZettiProviderReceipts = async (startDate: string, endDate: string, nodeId: string) => {
+    return callZettiAPI('SEARCH_PROVIDER_RECEIPTS', { startDate, endDate }, nodeId);
+};
+
+export const searchZettiInsuranceReceipts = async (startDate: string, endDate: string, nodeId: string) => {
+    return callZettiAPI('SEARCH_INSURANCE_RECEIPTS', { startDate, endDate }, nodeId);
+};
+
+export const searchZettiCustomers = async (nodeId: string, filters: any = {}) => {
+    return callZettiAPI('SEARCH_CUSTOMERS', filters, nodeId);
 };

@@ -1,0 +1,10 @@
+{
+  "firebase": {
+    "projectId": "vencidos-ca12b",
+    "storageBucket": "vencidos-ca12b.firebasestorage.app"
+  },
+  "zetti": {
+    "secret": "SRwdDVgLQT1i",
+    "client_id": "biotrack"
+  }
+}

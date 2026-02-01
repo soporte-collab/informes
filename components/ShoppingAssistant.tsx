@@ -1,10 +1,10 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { SaleRecord } from '../types';
+import { SaleRecord, StockRecord } from '../types';
 import {
     ShoppingCart, Package, TrendingUp, Download, Search, AlertTriangle,
     CheckCircle2, RefreshCw, Calculator, ArrowRightLeft, Filter, Edit3,
     PlusCircle, Calendar, List, Factory, ChevronDown, ChevronUp, X, Trash2,
-    ChevronRight, Zap
+    ChevronRight, Zap, HardDrive, Upload, Activity
 } from 'lucide-react';
 import {
     searchZettiProductByBarcode, searchZettiProductByDescription,
@@ -19,6 +19,8 @@ import { formatMoney } from '../utils/dataHelpers';
 
 interface ShoppingAssistantProps {
     salesData: SaleRecord[];
+    stockData?: StockRecord[] | null;
+    onUploadStock?: () => void;
 }
 
 interface SuggestionItem {
@@ -38,7 +40,7 @@ interface SuggestionItem {
     isManualEntry?: boolean;
 }
 
-export const ShoppingAssistant: React.FC<ShoppingAssistantProps> = ({ salesData }) => {
+export const ShoppingAssistant: React.FC<ShoppingAssistantProps> = ({ salesData, stockData, onUploadStock }) => {
     // Basic Settings
     const [daysToCover, setDaysToCover] = useState(30);
     const [minSales, setMinSales] = useState(3);
@@ -102,6 +104,26 @@ export const ShoppingAssistant: React.FC<ShoppingAssistantProps> = ({ salesData 
         // Apply 5.5 / 7 factor for actual retail working days
         return totalDays * (5.5 / 7);
     }, [startDate, endDate]);
+
+    // Local Stock Lookup Map (from uploaded CSV)
+    const localStockMap = useMemo(() => {
+        const map = new Map<string, { bio: number, chacras: number }>();
+        if (!stockData) return map;
+
+        stockData.forEach(s => {
+            const current = map.get(s.barcode) || { bio: 0, chacras: 0 };
+            // El reporte suele ser un snapshot, pero si hay varios (ej. de distintos días),
+            // sumamos si son de la misma sucursal o sobreescribimos si confiamos en el orden cronológico.
+            // Para Biosalud, lo agrupamos por sucursal
+            if (s.branch.toUpperCase().includes('CHACRAS')) {
+                current.chacras = s.currentStock;
+            } else {
+                current.bio = s.currentStock;
+            }
+            map.set(s.barcode, current);
+        });
+        return map;
+    }, [stockData]);
 
     // Compute Primary Suggestions
     const initialSuggestions = useMemo(() => {
@@ -223,42 +245,56 @@ export const ShoppingAssistant: React.FC<ShoppingAssistantProps> = ({ salesData 
     }, []);
 
     useEffect(() => {
-        // Enriquecer sugerencias iniciales con el maestro (incluyendo STOCK CACHEADO)
+        // Enriquecer sugerencias iniciales con el maestro y STOCK (PRIORIDAD: REPORTE DE STOCK)
         const enriched = initialSuggestions.map(s => {
-            // Intentamos buscar por barcode, si no por nombre
+            let currentBarcode = s.barcode;
+            const isNoCode = currentBarcode.startsWith('NO_CODE_') || currentBarcode === 'N/A' || currentBarcode === 'NULL';
+
+            // 1. Intentar encontrar por CÓDIGO en el reporte de stock
+            let localStock = localStockMap.get(currentBarcode);
+
+            // 2. Si no hay código, intentar encontrar por NOMBRE en el reporte de stock (INYECCIÓN DE CÓDIGO)
+            if (isNoCode || !localStock) {
+                const stockMatchByName = stockData?.find(sd => sd.productName.trim().toUpperCase() === s.productName.trim().toUpperCase() && sd.barcode && !sd.barcode.startsWith('NO_CODE_'));
+                if (stockMatchByName) {
+                    currentBarcode = stockMatchByName.barcode;
+                    localStock = localStockMap.get(currentBarcode);
+                }
+            }
+
+            // 3. Cruzar con el Maestro (Caché local/Zetti Cloud)
             const match = productMaster.find(p =>
-                (s.barcode !== 'N/A' && p.barcode === s.barcode) ||
+                (currentBarcode !== 'N/A' && p.barcode === currentBarcode) ||
                 (p.name === s.productName)
             );
 
-            if (match) {
-                const stockBio = Number(match.stockBio || 0);
-                const stockChacras = Number(match.stockChacras || 0);
+            // Valores finales de stock
+            let stockBio = localStock ? localStock.bio : (match ? Number(match.stockBio || 0) : 0);
+            let stockChacras = localStock ? localStock.chacras : (match ? Number(match.stockChacras || 0) : 0);
+            let status: 'idle' | 'success' = localStock ? 'success' : 'idle';
 
-                // Determinamos qué stock restar basado en la sucursal seleccionada
-                let stockToSubtract = 0;
-                if (selectedBranch === 'BIOSALUD') stockToSubtract = stockBio;
-                else if (selectedBranch === 'CHACRAS') stockToSubtract = stockChacras;
-                else stockToSubtract = stockBio + stockChacras;
+            let stockToSubtract = 0;
+            if (selectedBranch === 'BIOSALUD') stockToSubtract = stockBio;
+            else if (selectedBranch === 'CHACRAS') stockToSubtract = stockChacras;
+            else stockToSubtract = stockBio + stockChacras;
 
-                // Si tenemos stock cacheado, lo usamos para el cálculo inicial
-                const initialOrder = Math.max(0, s.needed - stockToSubtract);
+            const initialOrder = Math.max(0, s.needed - stockToSubtract);
 
-                return {
-                    ...s,
-                    barcode: match.barcode || s.barcode,
-                    productId: match.productId || s.productId,
-                    manufacturer: match.manufacturer || s.manufacturer,
-                    stockBio,
-                    stockChacras,
-                    manualOrder: initialOrder,
-                    stockUpdatedAt: match.stockUpdatedAt
-                };
-            }
-            return s;
+            return {
+                ...s,
+                barcode: currentBarcode, // Aquí inyectamos el código real si lo encontramos
+                productId: match?.productId || s.productId,
+                manufacturer: (localStock ? s.manufacturer : match?.manufacturer) || s.manufacturer,
+                category: (localStock ? s.category : match?.category) || s.category,
+                stockBio,
+                stockChacras,
+                manualOrder: initialOrder,
+                status,
+                stockUpdatedAt: localStock ? new Date().toISOString() : match?.stockUpdatedAt
+            };
         });
         setSuggestions(enriched);
-    }, [initialSuggestions, productMaster, selectedBranch]);
+    }, [initialSuggestions, productMaster, localStockMap, selectedBranch, stockData]);
 
     const filteredSuggestions = suggestions.filter(s => {
         if (hiddenIds.has(s.barcode)) return false;
@@ -314,87 +350,95 @@ export const ShoppingAssistant: React.FC<ShoppingAssistantProps> = ({ salesData 
     };
 
     const checkStockDualNode = async () => {
+        if (loadingStock) return;
+
+        const toCheck = filteredSuggestions.filter(s => s.status === 'idle');
+        if (toCheck.length === 0) return;
+
         setLoadingStock(true);
         const updated = [...suggestions];
-        const toCheck = filteredSuggestions.filter(s => s.status === 'idle');
 
-        for (let item of toCheck) {
-            const idx = updated.findIndex(s => s.barcode === item.barcode);
-            if (idx === -1) continue;
+        // Paso 1: Resolver PIDs faltantes (Zetti necesita el ID numérico para el stock masivo)
+        const getHelperNode = () => selectedBranch === 'CHACRAS' ? ZETTI_NODES.CHACRAS : ZETTI_NODES.BIOSALUD;
 
-            updated[idx].status = 'loading';
-            setSuggestions([...updated]);
+        try {
+            // Procesamos en pequeños grupos para resolver IDs
+            for (let i = 0; i < toCheck.length; i += 5) {
+                const chunk = toCheck.slice(i, i + 5);
+                await Promise.all(chunk.map(async (item) => {
+                    const idx = updated.findIndex(s => s.barcode === item.barcode);
+                    if (idx === -1 || updated[idx].productId) return;
 
-            try {
-                let pid = item.productId;
-                let barcode = item.barcode;
-                const isRealBarcode = barcode && !barcode.startsWith('NO_CODE_') && barcode !== 'N/A' && barcode.toUpperCase() !== 'NULL';
+                    try {
+                        let pid = null;
+                        const barcode = item.barcode;
+                        const isRealBarcode = barcode && !barcode.startsWith('NO_CODE_') && barcode !== 'N/A' && barcode.toUpperCase() !== 'NULL';
 
-                if (!pid) {
-                    // 1. Intentar por Barcode si tenemos uno real
-                    if (isRealBarcode) {
-                        const searchRes = await searchZettiProductByBarcode(barcode);
-                        const products = searchRes.content || (Array.isArray(searchRes) ? searchRes : []);
-                        if (products.length > 0) {
-                            pid = products[0].id;
-                            updated[idx].productId = pid;
+                        if (isRealBarcode) {
+                            const res: any = await searchZettiProductByBarcode(barcode, getHelperNode());
+                            const prods = res.content || (Array.isArray(res) ? res : []);
+                            if (prods.length > 0) pid = prods[0].id;
                         }
-                    }
 
-                    // 2. Si aún no hay PID, buscar en Maestro Local (Firestore)
-                    if (!pid) {
-                        const masterProd: any = await getProductFromMaster(item.productName);
-                        if (masterProd && masterProd.barcode !== 'N/A') {
-                            pid = masterProd.productId;
-                            barcode = masterProd.barcode;
-                            updated[idx].productId = pid;
-                            updated[idx].barcode = barcode;
+                        if (!pid) {
+                            const cleanName = item.productName.split(/ [xX]\d+/)[0].split(' (')[0].trim();
+                            const res: any = await searchZettiProductByDescription(cleanName, getHelperNode());
+                            const prods = res.content || (Array.isArray(res) ? res : []);
+                            const match = prods.find((p: any) => p.description.toLowerCase().includes(cleanName.toLowerCase())) || prods[0];
+                            if (match) pid = match.id;
                         }
+
+                        if (pid) updated[idx].productId = pid;
+                    } catch (e) {
+                        console.error(`Error resolviendo PID para ${item.productName}:`, e);
                     }
-
-                    // 3. Como último recurso, buscar por Descripción
-                    if (!pid) {
-                        const cleanName = item.productName.split(/ [xX]\d+/)[0].split(' (')[0].trim();
-                        const searchRes = await searchZettiProductByDescription(cleanName, ZETTI_NODES.BIOSALUD);
-                        const products = searchRes.content || (Array.isArray(searchRes) ? searchRes : []);
-                        const prod = products.find((p: any) =>
-                            p.description.toLowerCase().includes(cleanName.toLowerCase()) ||
-                            cleanName.toLowerCase().includes(p.description.toLowerCase())
-                        ) || products[0];
-
-                        if (prod) {
-                            pid = prod.id;
-                            barcode = prod.barCode || prod.barcode || 'N/A';
-                            updated[idx].productId = pid;
-                            updated[idx].barcode = barcode;
-                        }
-                    }
-                }
-
-                if (pid) {
-                    const multiRaw = await searchZettiMultiStock([String(pid)]);
-                    const multiArr = Array.isArray(multiRaw) ? multiRaw : [];
-                    const detBio = multiArr.find((d: any) => String(d.idNodo) === '2378041');
-                    const detChacras = multiArr.find((d: any) => String(d.idNodo) === '2406943');
-
-                    // Guardamos el stock como número, o null si no se encontró en ese nodo
-                    updated[idx].stockBio = detBio?.detalles?.stock ?? 0;
-                    updated[idx].stockChacras = detChacras?.detalles?.stock ?? 0;
-
-                    // RECALCULO DE "PEDIR": Necesidad - Stock Total
-                    const totalInventario = (updated[idx].stockBio || 0) + (updated[idx].stockChacras || 0);
-                    updated[idx].manualOrder = Math.max(0, updated[idx].needed - totalInventario);
-
-                    updated[idx].status = 'success';
-                } else {
-                    updated[idx].status = 'error'; // No se halló el producto en Zetti
-                }
-            } catch (err) {
-                updated[idx].status = 'error';
+                }));
             }
+
+            // Paso 2: Consulta de stock masiva (Batching de a 30 productos)
+            const productsToSync = updated.filter(s => s.productId && s.status === 'idle');
+
+            for (let i = 0; i < productsToSync.length; i += 30) {
+                const batch = productsToSync.slice(i, i + 30);
+                const pids = batch.map(b => String(b.productId));
+
+                try {
+                    const multiRaw: any = await searchZettiMultiStock(pids);
+                    const multiArr = Array.isArray(multiRaw) ? multiRaw : [];
+
+                    batch.forEach(item => {
+                        const idx = updated.findIndex(s => s.barcode === item.barcode);
+                        if (idx === -1) return;
+
+                        const details = multiArr.filter((d: any) => String(d.idProducto) === String(item.productId));
+                        const detBio = details.find((d: any) => String(d.idNodo) === ZETTI_NODES.BIOSALUD);
+                        const detChacras = details.find((d: any) => String(d.idNodo) === ZETTI_NODES.CHACRAS);
+
+                        updated[idx].stockBio = detBio?.detalles?.stock ?? 0;
+                        updated[idx].stockChacras = detChacras?.detalles?.stock ?? 0;
+
+                        const totalStock = (updated[idx].stockBio || 0) + (updated[idx].stockChacras || 0);
+                        updated[idx].manualOrder = Math.max(0, updated[idx].needed - totalStock);
+                        updated[idx].status = 'success';
+                    });
+                } catch (e) {
+                    console.error("Error en batch de stock:", e);
+                }
+            }
+
+            // Marcar restantes como error si no se pudo obtener nada
+            updated.forEach(s => {
+                if (s.status === 'loading' || s.status === 'idle') {
+                    if (toCheck.some(tc => tc.barcode === s.barcode)) s.status = 'error';
+                }
+            });
+
+            setSuggestions(updated);
+        } catch (err) {
+            console.error("Error global en checkStockDualNode:", err);
+        } finally {
+            setLoadingStock(false);
         }
-        setSuggestions([...updated]);
-        setLoadingStock(false);
     };
 
     const handleGlobalSearch = async () => {
@@ -455,6 +499,26 @@ export const ShoppingAssistant: React.FC<ShoppingAssistantProps> = ({ salesData 
         }
     };
 
+    const handleEnrichProducts = async () => {
+        if (!confirm("Esto buscará en Zetti la información faltante (Rubro, Familia, Laboratorio) para los productos nuevos. ¿Continuar?")) return;
+        setLoadingStock(true);
+        try {
+            // Llamamos a la Cloud Function HTTP
+            const res = await fetch('https://us-central1-informes-a551f.cloudfunctions.net/zetti_enrich_products');
+            const data = await res.json();
+            alert(data.message || "Proceso de enriquecimiento finalizado.");
+
+            // Recargar maestro
+            const master = await getAllProductMasterFromDB();
+            setProductMaster(master || []);
+        } catch (e: any) {
+            alert("Error al enriquecer productos: " + e.message);
+        } finally {
+            setLoadingStock(false);
+        }
+    };
+
+
     const exportToDrugstore = () => {
         const lines = suggestions
             .filter(s => s.manualOrder > 0 && s.barcode !== 'N/A' && !s.barcode.startsWith('NO_CODE_') && !hiddenIds.has(s.barcode))
@@ -467,14 +531,26 @@ export const ShoppingAssistant: React.FC<ShoppingAssistantProps> = ({ salesData 
         a.click();
     };
 
-    // Movement History for Detail View
-    const productHistory = useMemo(() => {
-        if (!expandedProduct) return [];
-        return salesData
+    // Movement History & Technical Sheet for Detail View
+    const productDetail = useMemo(() => {
+        if (!expandedProduct) return { history: [], movements: [], master: null };
+
+        const history = salesData
             .filter(s => s.productName === expandedProduct || s.barcode === expandedProduct)
-            .sort((a, b) => b.date.getTime() - a.date.getTime())
-            .slice(0, 15);
-    }, [salesData, expandedProduct]);
+            .sort((a, b) => b.date.getTime() - a.date.getTime());
+
+        const movements = (stockData || [])
+            .filter(s => s.productName === expandedProduct || s.barcode === expandedProduct)
+            .sort((a, b) => b.date.getTime() - a.date.getTime());
+
+        const master = movements[0] || history[0]; // Best guess for current metadata
+
+        return {
+            history: history.slice(0, 15),
+            movements: movements.slice(0, 15),
+            master
+        };
+    }, [salesData, stockData, expandedProduct]);
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
@@ -487,6 +563,12 @@ export const ShoppingAssistant: React.FC<ShoppingAssistantProps> = ({ salesData 
                             <h2 className="text-3xl font-black tracking-tighter uppercase">Compras Inteligentes</h2>
                         </div>
                         <p className="text-gray-400 font-medium">Análisis de reposición basado en días laborales (5.5 / 7).</p>
+                        {stockData && stockData.length > 0 && (
+                            <div className="mt-3 flex items-center gap-2 bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-xl border border-emerald-100 w-fit">
+                                <HardDrive className="w-3.5 h-3.5" />
+                                <span className="text-[10px] font-black uppercase tracking-wider">Reporte de Stock Activo ({localStockMap.size} Items)</span>
+                            </div>
+                        )}
                     </div>
 
                     <div className="flex flex-wrap items-end gap-3">
@@ -522,6 +604,16 @@ export const ShoppingAssistant: React.FC<ShoppingAssistantProps> = ({ salesData 
                                 />
                             </div>
                         </div>
+
+                        {onUploadStock && (
+                            <button
+                                onClick={onUploadStock}
+                                className="flex items-center gap-2 bg-slate-900 text-white px-5 py-3 rounded-2xl font-black text-xs uppercase tracking-wider hover:bg-slate-800 transition-all shadow-lg hover:shadow-slate-200"
+                            >
+                                <Upload className="w-4 h-4 text-indigo-400" />
+                                Cargar Mov. Stock
+                            </button>
+                        )}
                     </div>
                 </div>
 
@@ -640,6 +732,17 @@ export const ShoppingAssistant: React.FC<ShoppingAssistantProps> = ({ salesData 
                         <RefreshCw className={`w-4 h-4 ${loadingStock ? 'animate-spin' : ''}`} />
                         REFRESCAR MAESTRO
                     </button>
+
+                    <button
+                        onClick={handleEnrichProducts}
+                        disabled={loadingStock}
+                        className="flex items-center justify-center gap-2 py-3 px-6 bg-indigo-100 text-indigo-700 rounded-2xl font-black shadow-lg hover:bg-indigo-200 transition-all border border-indigo-200"
+                        title="Busca Rubro, Familia y Laboratorio faltantes en Zetti"
+                    >
+                        <Zap className={`w-4 h-4 ${loadingStock ? 'animate-pulse' : ''}`} />
+                        ENRIQUECER DATOS
+                    </button>
+
 
                     {selectedIds.length > 0 && (
                         <button
@@ -782,52 +885,118 @@ export const ShoppingAssistant: React.FC<ShoppingAssistantProps> = ({ salesData 
                                         </td>
                                     </tr>
 
-                                    {/* Expansion: Movement History */}
+                                    {/* Expansion: Real Product Sheet (Ficha Maestra) */}
                                     {expandedProduct === item.productName && (
                                         <tr className="bg-slate-50/50">
                                             <td colSpan={7} className="px-8 py-6">
-                                                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden animate-in slide-in-from-top-2">
-                                                    <div className="bg-slate-800 px-6 py-3 flex justify-between items-center text-white">
-                                                        <h4 className="text-xs font-black uppercase tracking-widest flex items-center gap-2">
-                                                            <Calendar className="w-3.5 h-3.5 text-indigo-400" />
-                                                            Últimos Movimientos Registrados
-                                                        </h4>
-                                                        <span className="text-[10px] font-bold opacity-50">Mostrando últimos 15 registros</span>
+                                                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in slide-in-from-top-4 duration-300">
+
+                                                    {/* Technical Info Card */}
+                                                    <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+                                                        <div className="flex items-center gap-3 border-b border-slate-50 pb-3">
+                                                            <div className="bg-indigo-600 p-2 rounded-xl text-white">
+                                                                <Package className="w-5 h-5" />
+                                                            </div>
+                                                            <div>
+                                                                <h4 className="text-sm font-black uppercase text-slate-800">Ficha Técnica</h4>
+                                                                <p className="text-[10px] text-slate-400 font-bold tracking-tight">Datos Maestros del Producto</p>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="space-y-3">
+                                                            <div className="flex justify-between items-center bg-slate-50 p-3 rounded-2xl">
+                                                                <span className="text-[10px] font-black text-slate-400 uppercase">Código EAN</span>
+                                                                <span className="text-xs font-mono font-black text-slate-700">{item.barcode}</span>
+                                                            </div>
+                                                            <div className="flex justify-between items-center bg-slate-50 p-3 rounded-2xl">
+                                                                <span className="text-[10px] font-black text-slate-400 uppercase">Laboratorio</span>
+                                                                <span className="text-xs font-black text-slate-700">{item.manufacturer}</span>
+                                                            </div>
+                                                            <div className="flex justify-between items-center bg-slate-50 p-3 rounded-2xl">
+                                                                <span className="text-[10px] font-black text-slate-400 uppercase">Último Costo</span>
+                                                                <span className="text-xs font-black text-indigo-600">{formatMoney(productDetail.master?.costPrice || 0)}</span>
+                                                            </div>
+                                                            <div className="flex justify-between items-center bg-slate-50 p-3 rounded-2xl">
+                                                                <span className="text-[10px] font-black text-slate-400 uppercase">Precio Venta (Lista)</span>
+                                                                <span className="text-xs font-black text-emerald-600">{formatMoney(productDetail.master?.salePrice || 0)}</span>
+                                                            </div>
+                                                            <div className="flex justify-between items-center bg-indigo-600 p-3 rounded-2xl text-white">
+                                                                <span className="text-[10px] font-black uppercase opacity-70">Stock Sistema</span>
+                                                                <span className="text-xs font-black">{(item.stockBio || 0) + (item.stockChacras || 0)} UN</span>
+                                                            </div>
+                                                        </div>
                                                     </div>
-                                                    <div className="p-0">
-                                                        <table className="w-full text-xs">
-                                                            <thead>
-                                                                <tr className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase border-b border-slate-100">
-                                                                    <th className="px-4 py-3">Fecha</th>
-                                                                    <th className="px-4 py-3">Comprobante</th>
-                                                                    <th className="px-4 py-3 text-center">Cant.</th>
-                                                                    <th className="px-4 py-3">Cliente / Entidad</th>
-                                                                    <th className="px-4 py-3">Vendedor</th>
-                                                                    <th className="px-4 py-3 text-right">Total</th>
-                                                                </tr>
-                                                            </thead>
-                                                            <tbody className="divide-y divide-slate-50">
-                                                                {productHistory.map((h, iidx) => (
-                                                                    <tr key={iidx} className="hover:bg-slate-50 transition-colors">
-                                                                        <td className="px-4 py-3 font-medium text-slate-500">{format(h.date, 'dd/MM/yy HH:mm')}</td>
-                                                                        <td className="px-4 py-3 font-bold text-slate-700">{h.invoiceNumber}</td>
-                                                                        <td className="px-4 py-3 text-center">
-                                                                            <span className={`font-black px-2 py-0.5 rounded-full ${h.quantity < 0 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
-                                                                                {h.quantity}
-                                                                            </span>
-                                                                        </td>
-                                                                        <td className="px-4 py-3 font-medium text-slate-600 truncate max-w-[150px]">{h.entity || 'Particular'}</td>
-                                                                        <td className="px-4 py-3 text-slate-400 font-bold">{h.sellerName}</td>
-                                                                        <td className="px-4 py-3 text-right font-black text-slate-800">{formatMoney(h.totalAmount)}</td>
-                                                                    </tr>
-                                                                ))}
-                                                                {productHistory.length === 0 && (
+
+                                                    {/* Sales & Movement History */}
+                                                    <div className="lg:col-span-2 bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                                                        <div className="bg-slate-900 px-6 py-4 flex justify-between items-center">
+                                                            <div className="flex items-center gap-3">
+                                                                <Activity className="w-4 h-4 text-indigo-400" />
+                                                                <h4 className="text-xs font-black uppercase text-white tracking-widest">Historial Dinámico (Últimos 15)</h4>
+                                                            </div>
+                                                            <div className="flex gap-2">
+                                                                <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-[9px] font-black text-white uppercase">
+                                                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
+                                                                    Ventas
+                                                                </div>
+                                                                <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-[9px] font-black text-white uppercase">
+                                                                    <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.5)]"></div>
+                                                                    Mov. Stock
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="flex-1 overflow-y-auto max-h-[350px]">
+                                                            <table className="w-full text-left">
+                                                                <thead className="sticky top-0 bg-slate-50 border-b border-slate-100">
                                                                     <tr>
-                                                                        <td colSpan={6} className="py-10 text-center italic text-slate-400">No se encontraron movimientos registrados.</td>
+                                                                        <th className="px-5 py-3 text-[9px] font-black uppercase text-slate-400">Fecha/Hora</th>
+                                                                        <th className="px-5 py-3 text-[9px] font-black uppercase text-slate-400">Tipo/Nro</th>
+                                                                        <th className="px-5 py-3 text-[9px] font-black uppercase text-slate-400 text-center">Cant</th>
+                                                                        <th className="px-5 py-3 text-[9px] font-black uppercase text-slate-400 text-right">Monto Unit.</th>
+                                                                        <th className="px-5 py-3 text-[9px] font-black uppercase text-slate-400">Sucursal</th>
                                                                     </tr>
-                                                                )}
-                                                            </tbody>
-                                                        </table>
+                                                                </thead>
+                                                                <tbody className="divide-y divide-slate-50">
+                                                                    {/* Prefer detailed movements if available */}
+                                                                    {(productDetail.movements.length > 0 ? productDetail.movements : productDetail.history).map((h: any, iidx: number) => {
+                                                                        const isMovement = 'movementType' in h;
+                                                                        return (
+                                                                            <tr key={iidx} className="hover:bg-slate-50 transition-colors">
+                                                                                <td className="px-5 py-3 text-[11px] font-medium text-slate-500">{format(h.date, 'dd/MM/yy HH:mm')}</td>
+                                                                                <td className="px-5 py-3">
+                                                                                    <div className="font-black text-slate-700 text-[11px] uppercase truncate max-w-[120px]">
+                                                                                        {isMovement ? h.movementType : (h.entity || 'VENTA PUBLICO')}
+                                                                                    </div>
+                                                                                    <div className="text-[9px] font-bold text-indigo-400">
+                                                                                        {h.invoiceNumber || 'S/N'}
+                                                                                    </div>
+                                                                                </td>
+                                                                                <td className="px-5 py-3 text-center">
+                                                                                    <span className={`text-[11px] font-black px-2 py-0.5 rounded-lg ${(isMovement ? h.units : (h.quantity || 1)) < 0 ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                                                                                        {isMovement ? h.units : (h.quantity || 1)}
+                                                                                    </span>
+                                                                                </td>
+                                                                                <td className="px-5 py-3 text-right font-bold text-slate-800 text-[11px]">
+                                                                                    {formatMoney(isMovement ? (h.salePrice / (h.units || 1)) : h.unitPrice)}
+                                                                                </td>
+                                                                                <td className="px-5 py-3 text-[10px] font-black text-slate-400 uppercase">
+                                                                                    {h.branch === 'FCIA BIOSALUD' ? 'BIOSALUD' : h.branch.includes('CHACRAS') ? 'CHACRAS' : h.branch}
+                                                                                </td>
+                                                                            </tr>
+                                                                        );
+                                                                    })}
+                                                                </tbody>
+                                                            </table>
+                                                            {(productDetail.movements.length === 0 && productDetail.history.length === 0) && (
+                                                                <div className="py-12 text-center">
+                                                                    <div className="bg-slate-50 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3">
+                                                                        <Activity className="w-5 h-5 text-slate-300" />
+                                                                    </div>
+                                                                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Sin historial reciente</p>
+                                                                </div>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </td>

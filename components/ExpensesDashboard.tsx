@@ -1,17 +1,17 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { ExpenseRecord, ExpenseItem } from '../types';
+import { getMetadata, saveMetadata } from '../utils/db';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-    PieChart, Pie, Cell, AreaChart, Area
+    AreaChart, Area
 } from 'recharts';
 import { formatMoney } from '../utils/dataHelpers';
 import {
     TrendingUp, Calendar, CreditCard, Users, Filter,
     Package, Clock, Search, ChevronDown, ChevronRight,
-    X, CheckCircle, Ban, ListFilter, AlertCircle
+    X, CheckCircle, Ban, ListFilter, AlertCircle, Zap, ArrowRightLeft, Eye, EyeOff
 } from 'lucide-react';
-import { format, isWithinInterval, parseISO, startOfMonth, endOfMonth } from 'date-fns';
-import { es } from 'date-fns/locale';
+import { format, isWithinInterval } from 'date-fns';
 
 interface Props {
     data: ExpenseRecord[];
@@ -19,6 +19,8 @@ interface Props {
     endDate: string;
     onStartDateChange: (date: string) => void;
     onEndDateChange: (date: string) => void;
+    selectedBranch: string;
+    onSelectBranch: (branch: string) => void;
 }
 
 const COLORS = ['#f97316', '#3b82f6', '#8b5cf6', '#10b981', '#ef4444', '#f59e0b', '#06b6d4', '#ec4899'];
@@ -28,18 +30,37 @@ export const ExpensesDashboard: React.FC<Props> = ({
     startDate,
     endDate,
     onStartDateChange,
-    onEndDateChange
+    onEndDateChange,
+    selectedBranch,
+    onSelectBranch
 }) => {
     const [searchTerm, setSearchTerm] = useState('');
-    const [selectedBranch, setSelectedBranch] = useState('all');
     const [selectedMonth, setSelectedMonth] = useState('all');
     const [selectedStatus, setSelectedStatus] = useState('all');
-    // const [startDate, setStartDate] = useState('');
-    // const [endDate, setEndDate] = useState('');
     const [includedSuppliers, setIncludedSuppliers] = useState<string[]>([]);
     const [showFilters, setShowFilters] = useState(false);
     const [expandedInvoiceId, setExpandedInvoiceId] = useState<string | null>(null);
     const [removeDuplicates, setRemoveDuplicates] = useState(false);
+
+    // Categorización y Visibilidad
+    const [serviceCategories, setServiceCategories] = useState<Record<string, string>>({});
+    const [showHiddenServices, setShowHiddenServices] = useState(false);
+
+    useEffect(() => {
+        const loadCats = async () => {
+            const cats = await getMetadata('service_categories');
+            if (cats) setServiceCategories(cats);
+        };
+        loadCats();
+    }, []);
+
+    const moveToServices = async (supplier: string) => {
+        if (!window.confirm(`¿Mover al proveedor "${supplier}" al panel de Servicios (Gastos)?\n\nDesaparecerá de este listado y se moverá a la pestaña 'Gastos / Servicios'.`)) return;
+
+        const updated = { ...serviceCategories, [supplier]: 'VARIOS' };
+        setServiceCategories(updated);
+        await saveMetadata('service_categories', updated);
+    };
 
     const suppliers = useMemo(() => {
         return Array.from(new Set(data.map(d => d.supplier))).sort();
@@ -56,11 +77,16 @@ export const ExpensesDashboard: React.FC<Props> = ({
 
     const filteredData = useMemo(() => {
         let result = data.filter(d => {
+            // Exclude services ONLY if showHiddenServices is false
+            // Si el proveedor está en 'serviceCategories' y NO queremos ver ocultos, lo filtramos.
+            const isService = !!serviceCategories[d.supplier];
+            if (isService && !showHiddenServices) return false;
+
             const matchSearch = d.supplier.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 d.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 (d.items || []).some(item => item.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
-            const matchBranch = selectedBranch === 'all' || d.branch === selectedBranch;
+            const matchBranch = selectedBranch === 'all' || d.branch.toLowerCase().includes(selectedBranch.toLowerCase());
             const matchMonth = selectedMonth === 'all' || d.monthYear === selectedMonth;
             const matchStatus = selectedStatus === 'all' || d.status === selectedStatus;
 
@@ -80,13 +106,11 @@ export const ExpensesDashboard: React.FC<Props> = ({
         if (removeDuplicates) {
             const seen = new Map<string, ExpenseRecord>();
             result.forEach(d => {
-                // Key: Supplier + Date (YYYY-MM-DD) + Amount
                 const dateKey = format(d.issueDate, 'yyyy-MM-dd');
                 const dupKey = `${d.supplier}-${dateKey}-${d.amount.toFixed(2)}`;
                 if (!seen.has(dupKey)) {
                     seen.set(dupKey, d);
                 } else {
-                    // If we see a duplicate, and current one has items but seen doesn't, swap
                     const existing = seen.get(dupKey)!;
                     if ((d.items?.length || 0) > (existing.items?.length || 0)) {
                         seen.set(dupKey, d);
@@ -97,7 +121,7 @@ export const ExpensesDashboard: React.FC<Props> = ({
         }
 
         return result;
-    }, [data, searchTerm, selectedBranch, selectedMonth, selectedStatus, startDate, endDate, includedSuppliers, removeDuplicates]);
+    }, [data, searchTerm, selectedBranch, selectedMonth, selectedStatus, startDate, endDate, includedSuppliers, removeDuplicates, serviceCategories, showHiddenServices]);
 
     const stats = useMemo(() => {
         let gross = 0;
@@ -110,8 +134,6 @@ export const ExpensesDashboard: React.FC<Props> = ({
         const total = gross - credits;
         const uniqueSuppliers = new Set(filteredData.map(d => d.supplier)).size;
         const totalItems = filteredData.reduce((acc, curr) => acc + (curr.items?.length || 0), 0);
-
-        // Future due dates
         const pending = filteredData.filter(d => d.dueDate >= new Date() && d.status !== 'PAGADO').length;
 
         return { total, gross, credits, suppliers: uniqueSuppliers, totalItems, pending };
@@ -138,10 +160,6 @@ export const ExpensesDashboard: React.FC<Props> = ({
             .map(([date, amount]) => ({ date, amount }))
             .sort((a, b) => a.date.localeCompare(b.date));
     }, [filteredData]);
-
-    const branches = useMemo(() => {
-        return Array.from(new Set(data.map(d => d.branch))).sort();
-    }, [data]);
 
     const toggleSupplier = (supplier: string) => {
         setIncludedSuppliers(prev =>
@@ -171,8 +189,8 @@ export const ExpensesDashboard: React.FC<Props> = ({
                         >
                             <ListFilter className="w-4 h-4" />
                             Filtros Avanzados
-                            {(includedSuppliers.length > 0 || selectedMonth !== 'all' || startDate !== '' || removeDuplicates) && (
-                                <span className="bg-orange-500 text-white w-5 h-5 rounded-full text-[10px] flex items-center justify-center animate-bounce">
+                            {(includedSuppliers.length > 0 || selectedMonth !== 'all' || startDate !== '' || removeDuplicates || showHiddenServices) && (
+                                <span className="bg-orange-500 text-white w-5 h-5 rounded-full text-[10px] flex items-center justify-center animate-bounce ml-2">
                                     !
                                 </span>
                             )}
@@ -198,12 +216,13 @@ export const ExpensesDashboard: React.FC<Props> = ({
                             <div>
                                 <label className="text-xs font-bold text-gray-400 uppercase mb-2 block tracking-wider">Sucursal</label>
                                 <select
-                                    className="w-full bg-gray-50 border border-gray-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                                    className="w-full bg-gray-50 border border-gray-200 rounded-lg py-2 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 font-bold text-orange-700"
                                     value={selectedBranch}
-                                    onChange={(e) => setSelectedBranch(e.target.value)}
+                                    onChange={(e) => onSelectBranch(e.target.value)}
                                 >
                                     <option value="all">Todas las Sucursales</option>
-                                    {branches.map(b => <option key={b} value={b}>{b}</option>)}
+                                    <option value="FCIA BIOSALUD">FCIA BIOSALUD</option>
+                                    <option value="CHACRAS">CHACRAS PARK</option>
                                 </select>
                             </div>
                             <div>
@@ -214,12 +233,14 @@ export const ExpensesDashboard: React.FC<Props> = ({
                                     onChange={(e) => setSelectedStatus(e.target.value)}
                                 >
                                     <option value="all">Todos los Estados</option>
-                                    {statuses.map(s => <option key={s} value={s}>{s}</option>)}
+                                    {statuses.map(s => <option key={typeof s === 'object' ? (s as any).id : s} value={typeof s === 'object' ? (s as any).name : s}>
+                                        {typeof s === 'object' ? (s as any).name : s}
+                                    </option>)}
                                 </select>
                             </div>
                         </div>
 
-                        {/* Custom Date Range */}
+                        {/* Custom Date Range & Toggles */}
                         <div className="space-y-4">
                             <label className="text-xs font-bold text-gray-400 uppercase mb-2 block tracking-wider">Rango Personalizado</label>
                             <div className="grid grid-cols-2 gap-2">
@@ -236,21 +257,47 @@ export const ExpensesDashboard: React.FC<Props> = ({
                                     onChange={(e) => onEndDateChange(e.target.value)}
                                 />
                             </div>
-                            <div className="pt-2">
-                                <label className="flex items-center gap-3 p-2 bg-orange-50 rounded-lg border border-orange-100 cursor-pointer hover:bg-orange-100 transition-colors">
-                                    <div className={`w-10 h-5 rounded-full relative transition-colors ${removeDuplicates ? 'bg-orange-500' : 'bg-gray-300'}`}>
-                                        <div className={`absolute top-1 left-1 w-3 h-3 bg-white rounded-full transition-all ${removeDuplicates ? 'translate-x-5' : ''}`}></div>
-                                    </div>
-                                    <input
-                                        type="checkbox"
-                                        className="hidden"
-                                        checked={removeDuplicates}
-                                        onChange={() => setRemoveDuplicates(!removeDuplicates)}
-                                    />
-                                    <span className="text-sm font-bold text-orange-800">Eliminar Duplicados</span>
-                                </label>
-                                <p className="text-[10px] text-orange-600 mt-1 px-1">Agrupa por Proveedor + Día + Monto para evitar dobles cargas.</p>
+
+                            {/* Panel de Opciones Avanzadas */}
+                            <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 space-y-3">
+                                {/* Toggle Duplicados */}
+                                <div className="flex items-center justify-between">
+                                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                                        <div className={`w-9 h-5 rounded-full p-0.5 transition-colors duration-300 ${removeDuplicates ? 'bg-orange-500' : 'bg-gray-300'}`}>
+                                            <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-300 ${removeDuplicates ? 'translate-x-4' : ''}`} />
+                                        </div>
+                                        <span className="text-xs font-bold text-gray-700">Eliminar Duplicados</span>
+                                        <input
+                                            type="checkbox"
+                                            className="hidden"
+                                            checked={removeDuplicates}
+                                            onChange={() => setRemoveDuplicates(!removeDuplicates)}
+                                        />
+                                    </label>
+                                </div>
+
+                                <div className="border-t border-dashed border-gray-200"></div>
+
+                                {/* Toggle Servicios Ocultos */}
+                                <div className="flex items-center justify-between">
+                                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                                        <div className={`w-9 h-5 rounded-full p-0.5 transition-colors duration-300 ${showHiddenServices ? 'bg-blue-500' : 'bg-gray-300'}`}>
+                                            <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-300 ${showHiddenServices ? 'translate-x-4' : ''}`} />
+                                        </div>
+                                        <span className="text-xs font-bold text-blue-800">Mostrar Servicios Ocultos</span>
+                                        <input
+                                            type="checkbox"
+                                            className="hidden"
+                                            checked={showHiddenServices}
+                                            onChange={() => setShowHiddenServices(!showHiddenServices)}
+                                        />
+                                    </label>
+                                </div>
+                                <p className="text-[10px] text-gray-400 italic leading-tight">
+                                    Muestra proveedores ya categorizados como servicios.
+                                </p>
                             </div>
+
                             <button
                                 onClick={() => {
                                     onStartDateChange('');
@@ -258,8 +305,9 @@ export const ExpensesDashboard: React.FC<Props> = ({
                                     setSelectedMonth('all');
                                     setSelectedStatus('all');
                                     setIncludedSuppliers([]);
-                                    setSelectedBranch('all');
+                                    onSelectBranch('all');
                                     setRemoveDuplicates(false);
+                                    setShowHiddenServices(false);
                                 }}
                                 className="text-xs text-orange-600 hover:underline font-medium block mt-2"
                             >
@@ -270,7 +318,7 @@ export const ExpensesDashboard: React.FC<Props> = ({
                         {/* Suppliers Multi-Select */}
                         <div>
                             <label className="text-xs font-bold text-gray-400 uppercase mb-2 block tracking-wider">Proveedores ({includedSuppliers.length || 'Todos'})</label>
-                            <div className="bg-gray-50 border border-gray-200 rounded-lg h-[120px] overflow-y-auto p-2 space-y-1">
+                            <div className="bg-gray-50 border border-gray-200 rounded-lg h-[150px] overflow-y-auto p-2 space-y-1">
                                 {suppliers.map(s => (
                                     <label key={s} className="flex items-center gap-2 p-1.5 hover:bg-white rounded cursor-pointer transition-colors group">
                                         <input
@@ -279,7 +327,15 @@ export const ExpensesDashboard: React.FC<Props> = ({
                                             onChange={() => toggleSupplier(s)}
                                             className="rounded border-gray-300 text-orange-600 focus:ring-orange-500 w-4 h-4"
                                         />
-                                        <span className={`text-xs truncate ${includedSuppliers.includes(s) ? 'font-bold text-orange-700' : 'text-gray-600'}`}>{s}</span>
+                                        <span className={`text-xs truncate ${includedSuppliers.includes(s) ? 'font-bold text-orange-700' : 'text-gray-600'}`}>
+                                            {s}
+                                        </span>
+                                        {/* Badge si es servicio */}
+                                        {serviceCategories[s] && (
+                                            <span className="text-[9px] bg-blue-100 text-blue-600 px-1 rounded ml-auto">
+                                                SERV
+                                            </span>
+                                        )}
                                     </label>
                                 ))}
                             </div>
@@ -420,84 +476,102 @@ export const ExpensesDashboard: React.FC<Props> = ({
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50">
-                            {filteredData.map((record) => (
-                                <React.Fragment key={record.id}>
-                                    <tr
-                                        onClick={() => setExpandedInvoiceId(expandedInvoiceId === record.id ? null : record.id)}
-                                        className={`hover:bg-orange-50/30 cursor-pointer transition-colors group ${expandedInvoiceId === record.id ? 'bg-orange-50/50' : ''}`}
-                                    >
-                                        <td className="px-6 py-4 text-gray-600 font-medium">{format(record.issueDate, 'dd/MM/yyyy')}</td>
-                                        <td className="px-6 py-4 font-bold text-gray-900 group-hover:text-orange-600 flex items-center gap-2">
-                                            {record.supplier}
-                                            {(record.items?.length || 0) > 0 && <span className="bg-blue-50 text-blue-600 text-[10px] px-1.5 rounded-full border border-blue-100">{record.items?.length} ítems</span>}
-                                        </td>
-                                        <td className="px-6 py-4 text-xs font-mono text-gray-400">{record.code}</td>
-                                        <td className="px-6 py-4 text-right font-black text-gray-800">{formatMoney(record.amount)}</td>
-                                        <td className="px-6 py-4">
-                                            <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${record.status === 'INGRESADO' ? 'bg-blue-50 text-blue-600 border border-blue-100' :
-                                                record.status === 'PAGADO' ? 'bg-green-50 text-green-600 border border-green-100' :
-                                                    'bg-gray-50 text-gray-600 border border-gray-100'
-                                                }`}>
-                                                {record.status}
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-4 text-gray-300">
-                                            {expandedInvoiceId === record.id ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                                        </td>
-                                    </tr>
-                                    {expandedInvoiceId === record.id && (
-                                        <tr>
-                                            <td colSpan={6} className="bg-gray-50/80 p-0 overflow-hidden">
-                                                <div className="p-6 border-b border-gray-100 animate-in slide-in-from-top-1 duration-200">
-                                                    <div className="flex items-center gap-3 mb-4">
-                                                        <Package className="w-5 h-5 text-orange-500" />
-                                                        <h4 className="font-bold text-gray-700">Detalle de Productos</h4>
-                                                    </div>
-                                                    {(!record.items || record.items.length === 0) ? (
-                                                        <div className="p-4 bg-white rounded-lg border border-dashed border-gray-200 text-center text-gray-400 text-xs shadow-sm">
-                                                            No hay detalle de productos disponible para este comprobante.
-                                                        </div>
-                                                    ) : (
-                                                        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                                                            <table className="w-full text-xs">
-                                                                <thead className="bg-gray-50 text-gray-500 uppercase font-bold">
-                                                                    <tr>
-                                                                        <th className="px-4 py-3 text-left">Ítem / Medicamento</th>
-                                                                        <th className="px-4 py-3 text-right">Cant.</th>
-                                                                        <th className="px-4 py-3 text-right">Precio Unit.</th>
-                                                                        <th className="px-4 py-3 text-right">Subtotal</th>
-                                                                        <th className="px-4 py-3 text-left">Marca / Lab.</th>
-                                                                    </tr>
-                                                                </thead>
-                                                                <tbody className="divide-y divide-gray-100">
-                                                                    {record.items.map((item, idx) => (
-                                                                        <tr key={idx} className="hover:bg-gray-50">
-                                                                            <td className="px-4 py-3 font-semibold text-gray-800">{item.name}</td>
-                                                                            <td className="px-4 py-3 text-right text-gray-600">{item.quantity}</td>
-                                                                            <td className="px-4 py-3 text-right text-gray-600">{formatMoney(item.price)}</td>
-                                                                            <td className="px-4 py-3 text-right font-bold text-gray-900">{formatMoney(item.quantity * item.price)}</td>
-                                                                            <td className="px-4 py-3 text-gray-500 italic whitespace-nowrap">{item.manufacturer}</td>
-                                                                        </tr>
-                                                                    ))}
-                                                                </tbody>
-                                                                <tfoot className="bg-orange-50/50">
-                                                                    <tr className="font-bold text-orange-900">
-                                                                        <td className="px-4 py-3 text-right">TOTAL DETALLADO</td>
-                                                                        <td className="px-4 py-3 text-right">{record.items?.reduce((a, b) => a + b.quantity, 0) || 0}</td>
-                                                                        <td></td>
-                                                                        <td className="px-4 py-3 text-right text-orange-700 italic">{formatMoney(record.items?.reduce((a, b) => a + (b.quantity * b.price), 0) || 0)}</td>
-                                                                        <td></td>
-                                                                    </tr>
-                                                                </tfoot>
-                                                            </table>
-                                                        </div>
-                                                    )}
-                                                </div>
+                            {filteredData.map((record) => {
+                                const isService = !!serviceCategories[record.supplier];
+                                return (
+                                    <React.Fragment key={record.id}>
+                                        <tr
+                                            onClick={() => setExpandedInvoiceId(expandedInvoiceId === record.id ? null : record.id)}
+                                            className={`hover:bg-orange-50/30 cursor-pointer transition-colors group ${expandedInvoiceId === record.id ? 'bg-orange-50/50' : ''} ${isService ? 'bg-blue-50/30' : ''}`}
+                                        >
+                                            <td className="px-6 py-4 text-gray-600 font-medium">{format(record.issueDate, 'dd/MM/yyyy')}</td>
+                                            <td className="px-6 py-4 font-bold text-gray-900 group-hover:text-orange-600 flex items-center gap-2">
+                                                {record.supplier}
+                                                {/* Botón Mover VISIBLE POR DEFECTO para diagnósticos */}
+                                                {!isService && (
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); moveToServices(record.supplier); }}
+                                                        className="p-1.5 bg-gray-100 hover:bg-blue-100 text-gray-400 hover:text-blue-600 rounded transition-all ml-2"
+                                                        title="Mover a Servicios (Gastos)"
+                                                    >
+                                                        <ArrowRightLeft className="w-3 h-3" />
+                                                    </button>
+                                                )}
+                                                {isService && (
+                                                    <span className="text-[9px] bg-blue-100 text-blue-600 px-1 rounded border border-blue-200 uppercase ml-2">
+                                                        SERV
+                                                    </span>
+                                                )}
+                                                {(record.items?.length || 0) > 0 && <span className="bg-blue-50 text-blue-600 text-[10px] px-1.5 rounded-full border border-blue-100 ml-1">{record.items?.length} ítems</span>}
+                                            </td>
+                                            <td className="px-6 py-4 text-xs font-mono text-gray-400">{record.code}</td>
+                                            <td className="px-6 py-4 text-right font-black text-gray-800">{formatMoney(record.amount)}</td>
+                                            <td className="px-6 py-4">
+                                                <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${record.status === 'INGRESADO' ? 'bg-blue-50 text-blue-600 border border-blue-100' :
+                                                    record.status === 'PAGADO' ? 'bg-green-50 text-green-600 border border-green-100' :
+                                                        'bg-gray-50 text-gray-600 border border-gray-100'
+                                                    }`}>
+                                                    {typeof record.status === 'object' ? (record.status as any).name || (record.status as any).description : record.status}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-4 text-gray-300">
+                                                {expandedInvoiceId === record.id ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                                             </td>
                                         </tr>
-                                    )}
-                                </React.Fragment>
-                            ))}
+                                        {expandedInvoiceId === record.id && (
+                                            <tr>
+                                                <td colSpan={6} className="bg-gray-50/80 p-0 overflow-hidden">
+                                                    <div className="p-6 border-b border-gray-100 animate-in slide-in-from-top-1 duration-200">
+                                                        <div className="flex items-center gap-3 mb-4">
+                                                            <Package className="w-5 h-5 text-orange-500" />
+                                                            <h4 className="font-bold text-gray-700">Detalle de Productos</h4>
+                                                        </div>
+                                                        {(!record.items || record.items.length === 0) ? (
+                                                            <div className="p-4 bg-white rounded-lg border border-dashed border-gray-200 text-center text-gray-400 text-xs shadow-sm">
+                                                                No hay detalle de productos disponible para este comprobante.
+                                                            </div>
+                                                        ) : (
+                                                            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                                                                <table className="w-full text-xs">
+                                                                    <thead className="bg-gray-50 text-gray-500 uppercase font-bold">
+                                                                        <tr>
+                                                                            <th className="px-4 py-3 text-left">Ítem / Medicamento</th>
+                                                                            <th className="px-4 py-3 text-right">Cant.</th>
+                                                                            <th className="px-4 py-3 text-right">Precio Unit.</th>
+                                                                            <th className="px-4 py-3 text-right">Subtotal</th>
+                                                                            <th className="px-4 py-3 text-left">Marca / Lab.</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody className="divide-y divide-gray-100">
+                                                                        {record.items.map((item, idx) => (
+                                                                            <tr key={idx} className="hover:bg-gray-50">
+                                                                                <td className="px-4 py-3 font-semibold text-gray-800">{item.name}</td>
+                                                                                <td className="px-4 py-3 text-right text-gray-600">{item.quantity}</td>
+                                                                                <td className="px-4 py-3 text-right text-gray-600">{formatMoney(item.price)}</td>
+                                                                                <td className="px-4 py-3 text-right font-bold text-gray-900">{formatMoney(item.quantity * item.price)}</td>
+                                                                                <td className="px-4 py-3 text-gray-500 italic whitespace-nowrap">{item.manufacturer}</td>
+                                                                            </tr>
+                                                                        ))}
+                                                                    </tbody>
+                                                                    <tfoot className="bg-orange-50/50">
+                                                                        <tr className="font-bold text-orange-900">
+                                                                            <td className="px-4 py-3 text-right">TOTAL DETALLADO</td>
+                                                                            <td className="px-4 py-3 text-right">{record.items?.reduce((a, b) => a + b.quantity, 0) || 0}</td>
+                                                                            <td></td>
+                                                                            <td className="px-4 py-3 text-right text-orange-700 italic">{formatMoney(record.items?.reduce((a, b) => a + (b.quantity * b.price), 0) || 0)}</td>
+                                                                            <td></td>
+                                                                        </tr>
+                                                                    </tfoot>
+                                                                </table>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </React.Fragment>
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>

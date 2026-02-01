@@ -64,11 +64,36 @@ La API de Zetti reside en un servidor HTTP (`http://190.15.199.103:8089`) y no s
 2. **Auditoría de Precios**: Comparativa entre Biosalud y competidores, detectando oportunidades donde el precio es >15% más barato.
 3. **Manejo de Sucursales (Nodos)**: Se utilizan IDs de nodos específicos (ej. 2378041, 2406943) para filtrar datos por farmacia o usar el concentrador (2378039).
 
-## Historial Reciente (Enero 2026)
+## Historial Reciente (Febrero 2026) -> Integración de Gastos y Mix Maestro v2.0
+
+### 1. Gestión de Gastos y Servicios (YPF, Edemsa, Alquileres)
+- **Desafío**: La API de Zetti (`SEARCH_PROVIDER_RECEIPTS`) solo devuelve facturas de proveedores de mercadería (stock), dejando fuera gastos operativos y servicios públicos.
+- **Investigación**: Se intentó buscar en endpoints como `/cashier-sessions`, `/accounting/journal-records` y `/value-type/payments`. Se concluyó que estos gastos probablemente residen en un nodo de Administración/Concentrador o se manejan como asientos contables puros que la integración actual no captura.
+- **Solución Implementada**: **Carga Manual via CSV**.
+  - Se reactivó la funcionalidad de importar CSV en la pestaña "Gastos / Servicios".
+  - **Parser Habilitado**: `PapaParse` procesa el archivo CSV (ej: `GASTOS EXTERNOS.CSV`) mapeando columnas clave (`Entidad`, `Monto`, `FechaEmision`).
+  - **Visualización**: Los registros importados se marcan internamente como `source: 'manual_csv'` y se muestran inmediatamente en el dashboard, incluso sin categorización previa.
+
+### 2. Mix Maestro v2.0 (Corrección Crítica)
+- **Problema**: El dashboard sumaba erróneamente `Total Gastos` + `Total Servicios`, causando duplicación de montos cuando un mismo registro existía en ambas vistas (por la carga híbrida API + Manual).
+- **Corrección**: Se implementó una lógica de deduplicación basada en `Map<ID, Record>`.
+  - Ahora `Gastos Operativos` = Unification(Gastos API, Servicios Manuales) por ID único.
+  - Esto garantiza que el cálculo del **EBITDA** y la **Ganancia Operativa** sean matemáticamente correctos.
+
+### 3. Flujo de Trabajo Actualizado (Workflow)
+**Para agregar Gastos de Servicios (Luz, Gas, etc.):**
+1. **En Zetti**: Generar el informe de "Gastos Externos" o "Liquidaciones" y exportarlo a `.csv` o `.txt`.
+2. **En la App**:
+   - Ir a la pestaña **Gastos / Servicios**.
+   - Clic en el botón **"Importar CSV"**.
+   - Seleccionar el archivo.
+3. **Resultado**: Los gastos se visualizarán al instante y se impactarán en el cálculo de ganancias de Mix Maestro.
+
+### Historial Previo (Enero 2026)
 - Se configuró el repositorio Git para permitir trabajo remoto.
 - Se depuraron los endpoints de Zetti para búsqueda de productos y stock multi-nodo.
 - Se implementó la visualización de "faltas" y productos sin código de barras en el módulo de auditoría.
 - Se optimizó el Dashboard para mostrar métricas clave de ventas de Enero.
 
 ---
-*Última actualización: 30 de Enero, 2026*
+*Última actualización: 01 de Febrero, 2026*

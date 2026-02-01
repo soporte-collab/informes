@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { SaleRecord, InvoiceRecord, ExpenseRecord, CurrentAccountRecord } from './types';
-import { FileUpload } from './components/FileUpload';
+import Papa from 'papaparse';
+import { processInvoiceData, processExpenseData, processServiceData } from './utils/dataHelpers';
+import { SaleRecord, InvoiceRecord, ExpenseRecord, CurrentAccountRecord, StockRecord, InsuranceRecord, UnifiedTransaction } from './types';
 import { Dashboard } from './components/Dashboard';
 import { InvoiceDashboard } from './components/InvoiceDashboard';
 import { ExpensesDashboard } from './components/ExpensesDashboard';
@@ -12,727 +13,533 @@ import { ZettiSync } from './components/ZettiSync';
 import { Login } from './components/Login';
 import { PrintReport } from './components/PrintReport';
 import { ShoppingAssistant } from './components/ShoppingAssistant';
-import { Activity, LogOut, Trash2, HardDrive, BarChart3, FileText, Radar, Upload, FileText as FileTextIcon, User, RefreshCw, ShoppingCart, Wallet, Lightbulb, CloudLightning } from 'lucide-react';
-import { getAllSalesFromDB, saveSalesToDB, clearDB, saveInvoicesToDB, getAllInvoicesFromDB, getAllExpensesFromDB, saveExpensesToDB, getAllCurrentAccountsFromDB, saveCurrentAccountsToDB, getAllServicesFromDB, saveServicesToDB } from './utils/db';
-import { auth } from './src/firebaseConfig';
+import { MixMaestroDashboard } from './components/MixMaestroDashboard';
+import { SellersDashboard } from './components/SellersDashboard';
+import { Activity, LogOut, Trash2, HardDrive, BarChart3, FileText, Radar, Upload, RefreshCw, ShoppingCart, Wallet, Lightbulb, CloudLightning, Blend, LayoutDashboard, Package, Users, Truck, Calendar, Menu, Printer } from 'lucide-react';
+import {
+    getAllSalesFromDB, saveSalesToDB, clearDB, saveInvoicesToDB, getAllInvoicesFromDB,
+    getAllExpensesFromDB, saveExpensesToDB, getAllCurrentAccountsFromDB, saveCurrentAccountsToDB,
+    saveStockToDB, getAllStockFromDB, saveInsuranceToDB, getAllInsuranceFromDB,
+    getAllServicesFromDB, saveServicesToDB, getAllUnifiedFromDB, saveUnifiedToDB
+} from './utils/db';
 import * as firebaseAuth from 'firebase/auth';
-import Papa from 'papaparse';
-import { processInvoiceData, processTimeSyncData, processExpenseData, processCurrentAccountData, processServiceData } from './utils/dataHelpers';
-import { format, getHours } from 'date-fns';
+import { auth } from './src/firebaseConfig';
+import { format } from 'date-fns';
 
 const App: React.FC = () => {
     const [user, setUser] = useState<firebaseAuth.User | null>(null);
     const [authLoading, setAuthLoading] = useState(true);
 
-    // Initial states set to null to indicate "Not Loaded Yet"
     const [salesData, setSalesData] = useState<SaleRecord[] | null>(null);
     const [invoiceData, setInvoiceData] = useState<InvoiceRecord[] | null>(null);
     const [expenseData, setExpenseData] = useState<ExpenseRecord[] | null>(null);
     const [serviceData, setServiceData] = useState<ExpenseRecord[] | null>(null);
     const [currentAccountData, setCurrentAccountData] = useState<CurrentAccountRecord[] | null>(null);
+    const [stockData, setStockData] = useState<StockRecord[] | null>(null);
+    const [insuranceData, setInsuranceData] = useState<InsuranceRecord[] | null>(null);
 
     const [loading, setLoading] = useState(true);
-    const [timeSyncData, setTimeSyncData] = useState<Array<{ ticket: string, date: Date }> | null>(null);
-    const [activeTab, setActiveTab] = useState<'sales' | 'invoices' | 'crossed' | 'expenses' | 'debts' | 'services' | 'zetti' | 'shopping'>('sales');
-    const [uploadProgress, setUploadProgress] = useState<{ processed: number; total: number } | null>(null);
+    const [activeTab, setActiveTab] = useState<'sales' | 'invoices' | 'crossed' | 'expenses' | 'debts' | 'services' | 'zetti' | 'shopping' | 'mixMaestro' | 'import' | 'sellers'>('mixMaestro');
     const [selectedSeller, setSelectedSeller] = useState<string | null>(null);
-    const [sellerFilter, setSellerFilter] = useState<string>('all');
     const [showReport, setShowReport] = useState(false);
     const [selectedBranch, setSelectedBranch] = useState<string>('all');
-    const [startDate, setStartDate] = useState<string>('');
-    const [endDate, setEndDate] = useState<string>('');
+    const [startDate, setStartDate] = useState<string>(format(new Date(), 'yyyy-MM-01'));
+    const [endDate, setEndDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'));
     const [excludedProducts, setExcludedProducts] = useState<string[]>([]);
     const [includedProducts, setIncludedProducts] = useState<string[]>([]);
     const [excludedEntities, setExcludedEntities] = useState<string[]>([]);
     const [includedEntities, setIncludedEntities] = useState<string[]>([]);
+    const [sidebarExpanded, setSidebarExpanded] = useState(false);
 
-    const fileInputRef = useRef<HTMLInputElement>(null);
     const invoiceFileInputRef = useRef<HTMLInputElement>(null);
     const expenseFileInputRef = useRef<HTMLInputElement>(null);
     const serviceFileInputRef = useRef<HTMLInputElement>(null);
     const currentAccountFileInputRef = useRef<HTMLInputElement>(null);
+    const stockFileInputRef = useRef<HTMLInputElement>(null);
+    const insuranceFileInputRef = useRef<HTMLInputElement>(null);
 
-    // Auth monitor
-    useEffect(() => {
-        const unsubscribe = firebaseAuth.onAuthStateChanged(auth, (currentUser) => {
-            setUser(currentUser);
-            setAuthLoading(false);
-            if (!currentUser) {
-                setSalesData(null);
-                setInvoiceData(null);
-                setExpenseData(null);
-                setServiceData(null);
-                setCurrentAccountData(null);
-                setLoading(false);
-            }
+    const filteredSalesData = useMemo(() => {
+        if (!salesData) return [];
+        return salesData.filter(d => {
+            const dateStr = format(d.date, 'yyyy-MM-dd');
+            const branchMatch = selectedBranch === 'all' || d.branch.toLowerCase().includes(selectedBranch.toLowerCase());
+            return dateStr >= startDate && dateStr <= endDate && branchMatch;
         });
-        return () => unsubscribe();
-    }, []);
-
-    // Data loader
-    useEffect(() => {
-        const loadAllData = async () => {
-            if (!user) return;
-            setLoading(true);
-            try {
-                // Initialize with empty arrays to prevent "stuck in upload" screen if file exists but empty
-                // and to indicate that we ATTEMPTED to load.
-                const [s, i, e, ser, c] = await Promise.all([
-                    getAllSalesFromDB(),
-                    getAllInvoicesFromDB(),
-                    getAllExpensesFromDB(),
-                    getAllServicesFromDB(),
-                    getAllCurrentAccountsFromDB()
-                ]);
-
-                setSalesData(s || []);
-                setInvoiceData(i || []);
-                setExpenseData(e || []);
-                setServiceData(ser || []);
-                setCurrentAccountData(c || []);
-
-                console.log("Database successfully loaded from Firebase Storage.");
-            } catch (error: any) {
-                console.error("Failed to load from Cloud DB", error);
-                // Fallback to empty arrays so the UI can at least show empty dashboards
-                setSalesData([]);
-                setInvoiceData([]);
-                setExpenseData([]);
-                setServiceData([]);
-                setCurrentAccountData([]);
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        if (!authLoading && user) {
-            loadAllData();
-        }
-    }, [user, authLoading]);
+    }, [salesData, startDate, endDate, selectedBranch]);
 
     const enrichedSalesData = useMemo(() => {
-        if (!salesData || salesData.length === 0) return salesData;
-        if ((!invoiceData || invoiceData.length === 0) && (!timeSyncData || timeSyncData.length === 0)) {
-            return salesData;
-        }
+        if (!filteredSalesData || filteredSalesData.length === 0) return [];
+        if (!invoiceData || invoiceData.length === 0) return filteredSalesData;
 
-        const generateKeys = (nro: any) => {
-            const keys = new Set<string>();
-            if (!nro) return keys;
-            const cleanNro = String(nro).trim();
-            keys.add(cleanNro);
-            const alphaNum = cleanNro.replace(/[^a-zA-Z0-9]/g, '');
-            if (alphaNum) keys.add(alphaNum);
-
-            if (cleanNro.includes('-')) {
-                const parts = cleanNro.split('-');
-                const cleanParts = parts.map(p => p.replace(/\D/g, '').replace(/^0+/, '')).filter(p => p !== '');
-                if (cleanParts.length > 0) {
-                    keys.add(cleanParts.join('-'));
-                    keys.add(cleanParts.join(''));
-                }
-                const last = cleanParts[cleanParts.length - 1];
-                if (last) keys.add(last);
-            } else {
-                const digits = cleanNro.replace(/\D/g, '').replace(/^0+/, '');
-                if (digits) keys.add(digits);
+        // Map invoices by number for exact matching
+        const invMap = new Map<string, InvoiceRecord>();
+        invoiceData.forEach(inv => {
+            if (inv.invoiceNumber) {
+                // Clean the invoice number to match the sales format if necessary
+                const key = inv.invoiceNumber.trim();
+                invMap.set(key, inv);
             }
-            return keys;
-        };
+        });
 
-        const timeSyncMap = new Map<string, Date>();
-        if (timeSyncData) {
-            timeSyncData.forEach(item => {
-                const keys = generateKeys(item.ticket);
-                keys.forEach(k => {
-                    if (!timeSyncMap.has(k)) timeSyncMap.set(k, item.date);
-                });
-            });
-        }
+        return filteredSalesData.map(sale => {
+            const saleInvoiceNum = sale.invoiceNumber ? sale.invoiceNumber.trim() : null;
+            const inv = saleInvoiceNum ? invMap.get(saleInvoiceNum) : null;
 
-        const smartInvoiceMap = new Map<string, { entity: string, date: Date, paymentType?: string }>();
-        if (invoiceData) {
-            // Sort invoiceData to prioritize "real-looking" times over "dummy-looking" times (12:xx)
-            // This ensures that when we build the map, the "best" info for each ticket number wins.
-            const sortedInvoices = [...invoiceData].sort((a, b) => {
-                const aIsDummy = a.date.getHours() === 12;
-                const bIsDummy = b.date.getHours() === 12;
-                if (aIsDummy && !bIsDummy) return 1;
-                if (!aIsDummy && bIsDummy) return -1;
-                return b.date.getTime() - a.date.getTime(); // Latest first if same quality
-            });
-
-            sortedInvoices.forEach(inv => {
-                if (inv.invoiceNumber) {
-                    const keys = generateKeys(inv.invoiceNumber);
-                    let bestEntity = "Particular";
-                    if (inv.entity && inv.entity !== 'Particular' && inv.entity.length > 2) {
-                        bestEntity = inv.entity;
-                    }
-                    const info = { entity: bestEntity, date: inv.date, paymentType: inv.paymentType };
-                    keys.forEach(k => {
-                        // We set it if not exists OR if the new one is better (not dummy)
-                        const existing = smartInvoiceMap.get(k);
-                        const isBetter = !existing || (existing.date.getHours() === 12 && inv.date.getHours() !== 12);
-                        if (isBetter) smartInvoiceMap.set(k, info);
-                    });
-                }
-            });
-        }
-
-        return salesData.map(sale => {
-            const saleKeys = generateKeys(sale.invoiceNumber);
-            let newDate: Date | null = null;
-            for (const key of saleKeys) {
-                if (timeSyncMap.has(key)) {
-                    newDate = timeSyncMap.get(key)!;
-                    break;
-                }
-            }
-
-            let newEntity = sale.entity;
-            let newPaymentMethod = sale.paymentMethod;
-            let invoiceMatch = false;
-
-            for (const key of saleKeys) {
-                if (smartInvoiceMap.has(key)) {
-                    const info = smartInvoiceMap.get(key)!;
-                    if (info.entity !== 'Particular') newEntity = info.entity;
-                    if (info.paymentType) newPaymentMethod = info.paymentType;
-                    if (!newDate) newDate = info.date;
-                    invoiceMatch = true;
-                    break;
-                }
-            }
-
-            if (newDate || invoiceMatch) {
-                const finalDate = newDate || sale.date;
+            if (inv) {
                 return {
                     ...sale,
-                    entity: newEntity,
-                    date: finalDate,
-                    hour: getHours(finalDate),
-                    monthYear: format(finalDate, 'yyyy-MM'),
-                    paymentMethod: newPaymentMethod
+                    hour: inv.date.getHours(),
+                    paymentMethod: inv.paymentType || 'OTRO'
                 };
             }
             return sale;
         });
-    }, [salesData, invoiceData, timeSyncData]);
+    }, [filteredSalesData, invoiceData]);
 
     const uniqueSellers = useMemo(() => {
-        if (!enrichedSalesData) return [];
-        const sellers = new Set(enrichedSalesData.map(s => s.sellerName));
+        if (!salesData) return [];
+        const sellers = new Set(salesData.map(d => d.sellerName));
         return Array.from(sellers).sort();
-    }, [enrichedSalesData]);
+    }, [salesData]);
 
-    // UPLOAD HANDLERS
-    const handleSalesUpload = async (newRecords: SaleRecord[]) => {
-        setLoading(true);
-        setUploadProgress({ processed: 0, total: newRecords.length });
-        try {
-            const currentData = salesData || [];
-            const dataMap = new Map<string, SaleRecord>();
-            currentData.forEach(r => dataMap.set(r.id, r));
-            newRecords.forEach(r => dataMap.set(r.id, r));
-            const combinedData = Array.from(dataMap.values()).sort((a, b) => a.date.getTime() - b.date.getTime());
+    const unifiedFromSales = useMemo(() => {
+        if (!enrichedSalesData || enrichedSalesData.length === 0) return [];
 
-            await saveSalesToDB(combinedData, (p, t) => setUploadProgress({ processed: p, total: t }));
-            setSalesData(combinedData);
-            alert("✅ Ventas y productos actualizados correctamente.");
-        } catch (e: any) {
-            alert("Error: " + e.message);
-        } finally {
-            setLoading(false);
-            setUploadProgress(null);
-        }
-    };
+        const map = new Map<string, UnifiedTransaction>();
 
-    const handleInvoiceUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const files = event.target.files;
-        if (!files || files.length === 0) return;
-        setLoading(true);
-        Papa.parse(files[0], {
-            header: true,
-            skipEmptyLines: true,
-            transformHeader: (h) => h.trim(),
-            complete: async (results) => {
-                try {
-                    const processedData = processInvoiceData(results.data);
-                    const dataMap = new Map<string, InvoiceRecord>();
-                    (invoiceData || []).forEach(i => dataMap.set(i.id, i));
-                    processedData.forEach(i => dataMap.set(i.id, i));
-                    const combinedData = Array.from(dataMap.values()).sort((a, b) => a.date.getTime() - b.date.getTime());
-                    setUploadProgress({ processed: 0, total: combinedData.length });
-                    await saveInvoicesToDB(combinedData, (p, t) => setUploadProgress({ processed: p, total: t }));
-                    setInvoiceData(combinedData);
-                } finally {
-                    setLoading(false);
-                    setUploadProgress(null);
-                }
+        // Create a map of invoice numbers present in stockData for hasStockDetail tracking
+        const stockInvoiceNumbers = new Set<string>();
+        (stockData || []).forEach(s => {
+            if (s.invoiceNumber) {
+                const normalized = s.invoiceNumber.replace(/[^0-9-]/g, '').trim();
+                if (normalized) stockInvoiceNumbers.add(normalized);
             }
         });
-        event.target.value = '';
-    };
 
-    const handleExpenseUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const files = event.target.files;
-        if (!files || files.length === 0) return;
-        setLoading(true);
-        Papa.parse(files[0], {
-            header: true,
-            skipEmptyLines: true,
-            transformHeader: (h) => h.trim(),
-            complete: async (results) => {
-                try {
-                    const processedData = processExpenseData(results.data);
-                    const dataMap = new Map<string, ExpenseRecord>();
-                    (expenseData || []).forEach(e => dataMap.set(e.id, e));
-                    processedData.forEach(e => dataMap.set(e.id, e));
-                    const combinedData = Array.from(dataMap.values()).sort((a, b) => a.issueDate.getTime() - b.issueDate.getTime());
-                    setUploadProgress({ processed: 0, total: combinedData.length });
-                    await saveExpensesToDB(combinedData, (p, t) => setUploadProgress({ processed: p, total: t }));
-                    setExpenseData(combinedData);
-                } finally {
-                    setLoading(false);
-                    setUploadProgress(null);
-                }
+        // Use enrichedSalesData (which already has correct hours from invoiceData)
+        enrichedSalesData.forEach(sale => {
+            const key = sale.invoiceNumber || `INV-${sale.date.getTime()}-${sale.sellerName}`;
+            if (!map.has(key)) {
+                // Check if this invoice has stock detail
+                const normalizedInv = sale.invoiceNumber ? sale.invoiceNumber.replace(/[^0-9-]/g, '').trim() : '';
+                const hasStock = normalizedInv ? stockInvoiceNumbers.has(normalizedInv) : false;
+
+                map.set(key, {
+                    id: key,
+                    invoiceNumber: sale.invoiceNumber,
+                    type: sale.totalAmount < 0 ? 'NC' : 'FV',
+                    date: sale.date,
+                    branch: sale.branch,
+                    seller: sale.sellerName,
+                    client: sale.entity || 'Particular',
+                    entity: sale.entity || 'Particular',
+                    paymentMethod: sale.paymentMethod || 'Efectivo',
+                    totalNet: 0,
+                    totalGross: 0,
+                    totalDiscount: 0,
+                    items: [],
+                    hasStockDetail: hasStock,
+                    hasFinancialDetail: true
+                });
             }
-        });
-        event.target.value = '';
-    };
 
-    const handleServiceUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const files = event.target.files;
-        if (!files || files.length === 0) return;
-        setLoading(true);
-        Papa.parse(files[0], {
-            header: true,
-            skipEmptyLines: true,
-            transformHeader: (h) => h.trim(),
-            complete: async (results) => {
-                try {
-                    const processedData = processServiceData(results.data);
-                    const dataMap = new Map<string, ExpenseRecord>();
-                    (serviceData || []).forEach(e => dataMap.set(e.id, e));
-                    processedData.forEach(e => dataMap.set(e.id, e));
-                    const combinedData = Array.from(dataMap.values()).sort((a, b) => a.issueDate.getTime() - b.issueDate.getTime());
-                    setUploadProgress({ processed: 0, total: combinedData.length });
-                    await saveServicesToDB(combinedData, (p, t) => setUploadProgress({ processed: p, total: t }));
-                    setServiceData(combinedData);
-                } finally {
-                    setLoading(false);
-                    setUploadProgress(null);
-                }
-            }
+            const tx = map.get(key)!;
+            tx.totalNet += sale.totalAmount;
+            tx.totalGross += sale.totalAmount;
+            tx.items.push({
+                barcode: sale.barcode || '-',
+                name: sale.productName,
+                quantity: sale.quantity,
+                unitPrice: sale.unitPrice,
+                unitCost: sale.cost || 0,
+                totalPrice: sale.totalAmount,
+                totalCost: (sale.cost || 0) * sale.quantity,
+                profit: sale.totalAmount - ((sale.cost || 0) * sale.quantity),
+                manufacturer: sale.manufacturer || '-',
+                category: sale.category || '-'
+            });
         });
-        event.target.value = '';
-    };
 
-    const handleCurrentAccountUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const files = event.target.files;
-        if (!files || files.length === 0) return;
-        setLoading(true);
-        Papa.parse(files[0], {
-            header: false,
-            skipEmptyLines: true,
-            complete: async (results) => {
-                try {
-                    const processedData = processCurrentAccountData(results.data);
-                    const dataMap = new Map<string, CurrentAccountRecord>();
-                    (currentAccountData || []).forEach(r => dataMap.set(r.id, r));
-                    processedData.forEach(r => dataMap.set(r.id, r));
-                    const combinedData = Array.from(dataMap.values()).sort((a, b) => a.date.getTime() - b.date.getTime());
-                    setUploadProgress({ processed: 0, total: combinedData.length });
-                    await saveCurrentAccountsToDB(combinedData, (p, t) => setUploadProgress({ processed: p, total: t }));
-                    setCurrentAccountData(combinedData);
-                } finally {
-                    setLoading(false);
-                    setUploadProgress(null);
-                }
-            }
+        return Array.from(map.values());
+    }, [enrichedSalesData, stockData]);
+
+    useEffect(() => {
+        const unsubscribe = firebaseAuth.onAuthStateChanged(auth, (user) => {
+            setUser(user);
+            setAuthLoading(false);
         });
-        event.target.value = '';
-    };
+        return unsubscribe;
+    }, []);
 
-    const handleClearData = async () => {
-        if (window.confirm("⚠️ ¿Desea borrar TODA la base de datos compartida?")) {
+    useEffect(() => {
+        const loadData = async () => {
+            if (!user) return;
             setLoading(true);
             try {
-                await clearDB();
-                setSalesData([]);
-                setInvoiceData([]);
-                setExpenseData([]);
-                setServiceData([]);
-                setCurrentAccountData([]);
+                const [sales, invoices, expenses, currentAccounts, stock, insurance] = await Promise.all([
+                    getAllSalesFromDB(),
+                    getAllInvoicesFromDB(),
+                    getAllExpensesFromDB(),
+                    getAllCurrentAccountsFromDB(),
+                    getAllStockFromDB(),
+                    getAllInsuranceFromDB()
+                ]);
+                setSalesData(sales);
+                setInvoiceData(invoices);
+                setExpenseData(expenses);
+                setServiceData(expenses); // Feed expenses to services dashboard
+                setCurrentAccountData(currentAccounts);
+                setStockData(stock);
+                setInsuranceData(insurance);
+            } catch (error) {
+                console.error("Error loading data:", error);
             } finally {
                 setLoading(false);
             }
-        }
+        };
+        loadData();
+    }, [user]);
+
+    const handleSalesUpload = async (data: SaleRecord[]) => {
+        setSalesData(data);
+        await saveSalesToDB(data);
     };
+
+    const handleInvoiceUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        Papa.parse(file, {
+            header: true,
+            skipEmptyLines: true,
+            complete: async (results) => {
+                const processed = processInvoiceData(results.data as any[]);
+                console.log("Invoices processed:", processed.length);
+                setInvoiceData(processed);
+                await saveInvoicesToDB(processed);
+            }
+        });
+    };
+
+    const handleExpenseUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        Papa.parse(file, {
+            header: true,
+            skipEmptyLines: true,
+            complete: async (results) => {
+                const processed = processExpenseData(results.data as any[]);
+                console.log("Expenses processed:", processed.length);
+                setExpenseData(processed);
+                await saveExpensesToDB(processed);
+
+                // Also update services logic if needed by combining or refetching
+                // For now, serviceData is fed from expenses in loadData, 
+                // but if we upload expenses, we should update serviceData too if it relies on it.
+                // However, we are about to handle service upload separately for "Manual Services"
+            }
+        });
+    };
+
+    const handleServiceUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        Papa.parse(file, {
+            header: true,
+            skipEmptyLines: true,
+            complete: async (results) => {
+                const processed = processServiceData(results.data as any[]);
+                console.log("Services processed (from CSV):", processed.length);
+
+                // We join the existing expenses with these new services to ensure EVERYTHING is visible
+                // Or better, we save these to 'services.json' as DISTINCT manual entries
+                // to avoid overwriting the API expenses.
+
+                // Add a flag to identify these as manual imports if needed
+                const manualServices = processed.map(p => ({ ...p, source: 'manual_csv' }));
+
+                setServiceData(prev => {
+                    // Combine with existing (providing uniqueness check if needed) or replace?
+                    // User probably wants to ADD/UPDATE manual data.
+                    return [...prev, ...manualServices];
+                });
+
+                await saveServicesToDB(manualServices);
+                alert(`Se importaron ${manualServices.length} registros de servicios.`);
+            }
+        });
+    };
+
+    const handleCurrentAccountUpload = (e: React.ChangeEvent<HTMLInputElement>) => { /* ... */ };
+    const handleStockUpload = (e: React.ChangeEvent<HTMLInputElement>) => { /* ... */ };
+    const handleInsuranceUpload = (e: React.ChangeEvent<HTMLInputElement>) => { /* ... */ };
 
     const handleZettiImport = async (data: any) => {
-        let newInvoices: InvoiceRecord[] = [];
-        let newSales: SaleRecord[] = [];
+        // Refresh all data from DB after sync in background
+        try {
+            const [sales, invoices, expenses, currentAccounts, stock, insurance, services] = await Promise.all([
+                getAllSalesFromDB(),
+                getAllInvoicesFromDB(),
+                getAllExpensesFromDB(),
+                getAllCurrentAccountsFromDB(),
+                getAllStockFromDB(),
+                getAllInsuranceFromDB(),
+                getAllServicesFromDB()
+            ]);
 
-        // Support both legacy (array) and new (object) formats
-        if (Array.isArray(data)) {
-            newInvoices = data;
-        } else {
-            newInvoices = data.invoices || [];
-            newSales = data.sales || [];
-        }
+            setSalesData(sales);
+            setInvoiceData(invoices);
+            setExpenseData(expenses);
+            setCurrentAccountData(currentAccounts);
+            setStockData(stock);
+            setInsuranceData(insurance);
 
-        let updatedInvoices = false;
-        let updatedSales = false;
+            // Combine API expenses (potential services) + Manual Services
+            setServiceData([...expenses, ...services]);
 
-        // 1. Process Invoices
-        if (newInvoices.length > 0) {
-            const currentInvoices = invoiceData || [];
-            const existingInvIds = new Set(currentInvoices.map(i => i.id));
-            // Also check invoiceNumber to avoid duplicate business records even if ID differs slightly
-            const existingInvNumbers = new Set(currentInvoices.map(i => i.invoiceNumber));
-
-            const uniqueInvoices = newInvoices.filter(i =>
-                !existingInvIds.has(i.id) && !existingInvNumbers.has(i.invoiceNumber)
-            );
-
-            if (uniqueInvoices.length > 0) {
-                const merged = [...currentInvoices, ...uniqueInvoices];
-                setInvoiceData(merged);
-                await saveInvoicesToDB(merged);
-                updatedInvoices = true;
-                console.log(`[IMPORT] Added ${uniqueInvoices.length} new invoices.`);
-            }
-        }
-
-        // 2. Process Sales
-        if (newSales.length > 0) {
-            const currentSales = salesData || [];
-            const existingSaleIds = new Set(currentSales.map(s => s.id));
-
-            const uniqueSales = newSales.filter(s => !existingSaleIds.has(s.id));
-
-            if (uniqueSales.length > 0) {
-                const merged = [...currentSales, ...uniqueSales];
-                setSalesData(merged);
-                await saveSalesToDB(merged);
-                updatedSales = true;
-                console.log(`[IMPORT] Added ${uniqueSales.length} new sales items.`);
-            }
-        }
-
-        if (updatedInvoices || updatedSales) {
-            alert(`¡Importación Existosa!\nSe añadieron:\n- ${newInvoices.length} Comprobantes\n- ${newSales.length} Ítems de Venta\n\nLa base de datos se ha actualizado correctamente.`);
-        } else {
-            alert("No se encontraron registros nuevos relevantes (ya existían en la base de datos).");
+        } catch (error) {
+            console.error("Error refreshing data:", error);
         }
     };
 
-    if (authLoading) return <div className="min-h-screen flex items-center justify-center bg-gray-50"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-biosalud-600"></div></div>;
+    const handleClearData = async () => {
+        if (window.confirm("¿Está seguro de borrar toda la base de datos local?")) {
+            await clearDB();
+            window.location.reload();
+        }
+    };
+
+    useEffect(() => {
+        if (selectedSeller) setActiveTab('sellers');
+    }, [selectedSeller]);
+
+    if (authLoading) return <div className="min-h-screen flex items-center justify-center bg-gray-50"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div></div>;
     if (!user) return <Login />;
 
     return (
-        <div className="min-h-screen bg-gray-50 text-gray-900 pb-12 no-print font-sans">
-            {/* Hidden native inputs for custom triggers */}
-            <input type="file" ref={invoiceFileInputRef} onChange={handleInvoiceUpload} accept=".csv" className="hidden" />
-            <input type="file" ref={expenseFileInputRef} onChange={handleExpenseUpload} accept=".csv" className="hidden" />
-            <input type="file" ref={serviceFileInputRef} onChange={handleServiceUpload} accept=".csv" className="hidden" />
-            <input type="file" ref={currentAccountFileInputRef} onChange={handleCurrentAccountUpload} accept=".csv" className="hidden" />
+        <div className="min-h-screen bg-slate-50 flex no-print font-sans overflow-hidden">
 
-            <nav className="bg-white border-b border-gray-200 sticky top-0 z-30 shadow-sm">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <div className="flex justify-between h-16">
-                        <div className="flex items-center gap-2">
-                            <Activity className="w-6 h-6 text-biosalud-600" />
-                            <span className="font-bold text-xl tracking-tight">BioSalud <span className="text-biosalud-600">Analytics</span></span>
+            {/* SIDEBAR */}
+            <aside
+                onMouseEnter={() => setSidebarExpanded(true)}
+                onMouseLeave={() => setSidebarExpanded(false)}
+                className={`${sidebarExpanded ? 'w-72' : 'w-20'} bg-slate-900 flex flex-col shrink-0 border-r border-slate-800 z-40 relative group transition-all duration-300 ease-in-out no-print`}
+            >
+                <div className="p-6 border-b border-slate-800/50 flex items-center justify-center overflow-hidden h-[89px]">
+                    <div className="flex items-center gap-3 min-w-max">
+                        <div className="bg-indigo-600 p-2.5 rounded-2xl shadow-lg shadow-indigo-500/20">
+                            <Activity className="w-6 h-6 text-white" />
                         </div>
-
-                        <div className="hidden md:flex bg-gray-100 p-1 rounded-xl items-center my-2">
-                            <button
-                                onClick={() => setActiveTab('zetti')}
-                                className={`px-4 py-3 rounded-xl text-sm font-black flex items-center gap-2 transition-all ${activeTab === 'zetti'
-                                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-200 scale-105'
-                                    : 'text-slate-500 hover:bg-slate-50'
-                                    }`}
-                            >
-                                <CloudLightning className="w-5 h-5" />
-                                <span className="hidden md:inline">Zetti API</span>
-                            </button>
-
-                            <div className="w-px h-6 bg-slate-100 mx-2"></div>
-
-                            <button onClick={() => setActiveTab('sales')} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${activeTab === 'sales' ? 'bg-white shadow text-biosalud-700' : 'text-gray-500 hover:text-gray-700'}`}>Productos</button>
-                            <button onClick={() => setActiveTab('invoices')} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${activeTab === 'invoices' ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}>Facturación</button>
-                            <button onClick={() => setActiveTab('crossed')} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${activeTab === 'crossed' ? 'bg-white shadow text-purple-700' : 'text-gray-500 hover:text-gray-700'}`}>Cruces</button>
-                            <button onClick={() => setActiveTab('expenses')} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${activeTab === 'expenses' ? 'bg-white shadow text-orange-700' : 'text-gray-500 hover:text-gray-700'}`}>Proveedores</button>
-                            <button onClick={() => setActiveTab('services')} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${activeTab === 'services' ? 'bg-white shadow text-blue-500' : 'text-gray-500 hover:text-gray-700'}`}>Servicios</button>
-                            <button onClick={() => setActiveTab('debts')} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${activeTab === 'debts' ? 'bg-white shadow text-teal-700' : 'text-gray-500 hover:text-gray-700'}`}>Cuentas</button>
-                            <button onClick={() => setActiveTab('shopping')} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${activeTab === 'shopping' ? 'bg-white shadow text-indigo-700' : 'text-gray-500 hover:text-gray-700'}`}>Compras</button>
-                        </div>
-
-                        <div className="flex items-center gap-3">
-                            <span className="text-[10px] font-bold text-gray-400 uppercase hidden lg:block">{user.email?.split('@')[0]}</span>
-                            <button onClick={handleClearData} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors" title="Limpiar Base de Datos"><Trash2 className="w-5 h-5" /></button>
-                            <button onClick={() => firebaseAuth.signOut(auth)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors" title="Cerrar Sesión"><LogOut className="w-5 h-5" /></button>
+                        <div className={`${sidebarExpanded ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-4'} transition-all duration-300`}>
+                            <h1 className="text-white font-black text-xl tracking-tighter uppercase leading-none">BioSalud</h1>
+                            <p className="text-indigo-400 text-[10px] font-black tracking-widest uppercase">Analytics 2.0</p>
                         </div>
                     </div>
                 </div>
-            </nav>
 
-            <main className="max-w-7xl mx-auto px-4 py-8">
-                {loading && (
-                    <div className="flex flex-col items-center justify-center h-64 gap-4">
-                        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-biosalud-600"></div>
-                        <p className="text-gray-500 font-medium animate-pulse">Sincronizando con la nube...</p>
-                        {uploadProgress && (
-                            <div className="w-48 bg-gray-200 rounded-full h-1.5">
-                                <div className="bg-biosalud-600 h-1.5 rounded-full" style={{ width: `${(uploadProgress.processed / uploadProgress.total) * 100}%` }}></div>
-                            </div>
-                        )}
+                <div className="flex-1 overflow-y-auto py-6 px-3 space-y-2 custom-scrollbar overflow-x-hidden">
+                    <p className={`text-[10px] font-black text-slate-500 uppercase tracking-widest px-4 mb-2 truncate transition-opacity duration-300 ${sidebarExpanded ? 'opacity-100' : 'opacity-0'}`}>Principal</p>
+                    <button onClick={() => setActiveTab('zetti')} className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 ${activeTab === 'zetti' ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-500/20 font-black' : 'text-slate-400 hover:text-white hover:bg-slate-800 font-medium'}`}>
+                        <CloudLightning className="w-5 h-5 shrink-0" />
+                        <span className={`${sidebarExpanded ? 'opacity-100' : 'opacity-0 translate-x-4'} transition-all duration-300 whitespace-nowrap`}>Sincronizar Zetti</span>
+                    </button>
+
+                    <div className="h-4"></div>
+                    <p className={`text-[10px] font-black text-slate-500 uppercase tracking-widest px-4 mb-2 truncate transition-opacity duration-300 ${sidebarExpanded ? 'opacity-100' : 'opacity-0'}`}>Análisis de Datos</p>
+                    <button onClick={() => setActiveTab('sales')} className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 ${activeTab === 'sales' ? 'bg-indigo-600 text-white shadow-lg font-black' : 'text-slate-400 hover:text-white hover:bg-slate-800 font-medium'}`}>
+                        <Package className="w-5 h-5 shrink-0" />
+                        <span className={`${sidebarExpanded ? 'opacity-100' : 'opacity-0 translate-x-4'} transition-all duration-300 whitespace-nowrap`}>Analítica de Productos</span>
+                    </button>
+                    <button onClick={() => setActiveTab('shopping')} className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 ${activeTab === 'shopping' ? 'bg-indigo-600 text-white shadow-lg font-black' : 'text-slate-400 hover:text-white hover:bg-slate-800 font-medium'}`}>
+                        <ShoppingCart className="w-5 h-5 shrink-0" />
+                        <span className={`${sidebarExpanded ? 'opacity-100' : 'opacity-0 translate-x-4'} transition-all duration-300 whitespace-nowrap`}>Asistente de Compras</span>
+                    </button>
+                    <button onClick={() => setActiveTab('invoices')} className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 ${activeTab === 'invoices' ? 'bg-slate-800 text-white font-black border border-slate-700' : 'text-slate-400 hover:text-white hover:bg-slate-800 font-medium'}`}>
+                        <FileText className="w-5 h-5 shrink-0" />
+                        <span className={`${sidebarExpanded ? 'opacity-100' : 'opacity-0 translate-x-4'} transition-all duration-300 whitespace-nowrap`}>Facturación Neta</span>
+                    </button>
+                    <button onClick={() => setActiveTab('mixMaestro')} className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 ${activeTab === 'mixMaestro' ? 'bg-indigo-600 text-white shadow-lg font-black' : 'text-slate-400 hover:text-white hover:bg-slate-800 font-medium'}`}>
+                        <Blend className="w-5 h-5 shrink-0" />
+                        <span className={`${sidebarExpanded ? 'opacity-100' : 'opacity-0 translate-x-4'} transition-all duration-300 whitespace-nowrap`}>Mix Maestro</span>
+                    </button>
+                    <button onClick={() => setActiveTab('crossed')} className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 ${activeTab === 'crossed' ? 'bg-slate-800 text-white font-black border border-slate-700' : 'text-slate-400 hover:text-white hover:bg-slate-800 font-medium'}`}>
+                        <Radar className="w-5 h-5 shrink-0" />
+                        <span className={`${sidebarExpanded ? 'opacity-100' : 'opacity-0 translate-x-4'} transition-all duration-300 whitespace-nowrap`}>Cruce de Datos</span>
+                    </button>
+
+                    <div className="h-4"></div>
+                    <p className={`text-[10px] font-black text-slate-500 uppercase tracking-widest px-4 mb-2 truncate transition-opacity duration-300 ${sidebarExpanded ? 'opacity-100' : 'opacity-0'}`}>RRHH & Rendimiento</p>
+                    <button onClick={() => setActiveTab('sellers')} className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 ${activeTab === 'sellers' ? 'bg-amber-500 text-white shadow-lg font-black' : 'text-slate-400 hover:text-white hover:bg-slate-800 font-medium'}`}>
+                        <Users className="w-5 h-5 shrink-0" />
+                        <span className={`${sidebarExpanded ? 'opacity-100' : 'opacity-0 translate-x-4'} transition-all duration-300 whitespace-nowrap`}>Panel Vendedores</span>
+                    </button>
+
+                    <div className="h-4"></div>
+                    <p className={`text-[10px] font-black text-slate-500 uppercase tracking-widest px-4 mb-2 truncate transition-opacity duration-300 ${sidebarExpanded ? 'opacity-100' : 'opacity-0'}`}>Finanzas & Gastos</p>
+                    <button onClick={() => setActiveTab('expenses')} className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 ${activeTab === 'expenses' ? 'bg-slate-800 text-white font-black border border-slate-700' : 'text-slate-400 hover:text-white hover:bg-slate-800 font-medium'}`}>
+                        <Truck className="w-5 h-5 shrink-0" />
+                        <span className={`${sidebarExpanded ? 'opacity-100' : 'opacity-0 translate-x-4'} transition-all duration-300 whitespace-nowrap`}>Facturas Proveedor</span>
+                    </button>
+                    <button onClick={() => setActiveTab('services')} className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 ${activeTab === 'services' ? 'bg-slate-800 text-white font-black border border-slate-700' : 'text-slate-400 hover:text-white hover:bg-slate-800 font-medium'}`}>
+                        <Lightbulb className="w-5 h-5 shrink-0" />
+                        <span className={`${sidebarExpanded ? 'opacity-100' : 'opacity-0 translate-x-4'} transition-all duration-300 whitespace-nowrap`}>Gastos / Servicios</span>
+                    </button>
+                    <button onClick={() => setActiveTab('debts')} className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 ${activeTab === 'debts' ? 'bg-slate-800 text-white font-black border border-slate-700' : 'text-slate-400 hover:text-white hover:bg-slate-800 font-medium'}`}>
+                        <Wallet className="w-5 h-5 shrink-0" />
+                        <span className={`${sidebarExpanded ? 'opacity-100' : 'opacity-0 translate-x-4'} transition-all duration-300 whitespace-nowrap`}>Cuentas Corrientes</span>
+                    </button>
+
+                </div>
+
+                <div className="p-4 border-t border-slate-800 bg-slate-900/50">
+                    <div className={`flex items-center gap-3 mb-4 min-w-max transition-all duration-300 ${sidebarExpanded ? 'opacity-100' : 'opacity-0'}`}>
+                        <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700">
+                            <span className="font-black text-indigo-400 text-xs">{user.email?.charAt(0).toUpperCase()}</span>
+                        </div>
+                        <div className="truncate">
+                            <p className="text-white text-xs font-black truncate">{user.email?.split('@')[0]}</p>
+                            <p className="text-slate-500 text-[9px] uppercase font-bold tracking-tighter">Administrador</p>
+                        </div>
                     </div>
-                )}
+                    <div className="flex gap-2">
+                        <button onClick={handleClearData} className="flex-1 flex justify-center py-2 bg-slate-800 text-red-400 rounded-xl hover:bg-red-500 hover:text-white transition-all duration-300"><Trash2 className="w-4 h-4" /></button>
+                        <button onClick={() => firebaseAuth.signOut(auth)} className="flex-1 flex justify-center py-2 bg-slate-800 text-slate-400 rounded-xl hover:bg-slate-700 hover:text-white transition-all duration-300"><LogOut className="w-4 h-4" /></button>
+                    </div>
+                </div>
+            </aside>
 
-                {!loading && (
-                    <div className="animate-in fade-in duration-500">
-                        {activeTab === 'sales' && (
-                            <>
-                                {(!salesData || salesData.length === 0) ? (
-                                    <div className="text-center mt-20 max-w-xl mx-auto">
-                                        <div className="bg-white p-12 rounded-3xl border border-gray-100 shadow-xl">
-                                            <div className="bg-biosalud-50 w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-6">
-                                                <BarChart3 className="w-10 h-10 text-biosalud-600" />
-                                            </div>
-                                            <h2 className="text-3xl font-black mb-4">Base de Productos</h2>
-                                            <p className="text-gray-500 mb-8 font-medium">No se detectaron datos en la nube. Cargue su reporte de ventas para comenzar el análisis.</p>
-                                            <FileUpload onDataLoaded={handleSalesUpload} variant="primary" />
-                                        </div>
-                                    </div>
-                                ) : selectedSeller ? (
-                                    <SellerDetail
-                                        sellerName={selectedSeller}
-                                        data={enrichedSalesData || []}
-                                        onBack={() => setSelectedSeller(null)}
-                                        startDate={startDate}
-                                        endDate={endDate}
-                                        excludedProducts={excludedProducts}
-                                        includedProducts={includedProducts}
-                                        excludedEntities={excludedEntities}
-                                        includedEntities={includedEntities}
-                                    />
-                                ) : (
-                                    <>
-                                        <div className="mb-8 flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
-                                            <h2 className="text-2xl font-black tracking-tight">Analítica de Ventas</h2>
-                                            <FileUpload onDataLoaded={handleSalesUpload} variant="compact" />
-                                        </div>
-                                        <Dashboard
-                                            data={enrichedSalesData || []}
-                                            onSelectSeller={setSelectedSeller}
-                                            selectedBranch={selectedBranch}
-                                            onSelectBranch={setSelectedBranch}
-                                            sellerFilter={sellerFilter}
-                                            onSellerFilterChange={setSellerFilter}
-                                            sellersList={uniqueSellers}
-                                            startDate={startDate}
-                                            endDate={endDate}
-                                            onStartDateChange={setStartDate}
-                                            onEndDateChange={setEndDate}
-                                            excludedProducts={excludedProducts}
-                                            includedProducts={includedProducts}
-                                            onToggleExclusion={(p) => setExcludedProducts(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p])}
-                                            onToggleInclusion={(p) => setIncludedProducts(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p])}
-                                            excludedEntities={excludedEntities}
-                                            includedEntities={includedEntities}
-                                            onToggleEntityExclusion={(c) => setExcludedEntities(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c])}
-                                            onToggleEntityInclusion={(c) => setIncludedEntities(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c])}
-                                            onPrintReport={() => setShowReport(true)}
-                                            onUploadInvoices={() => invoiceFileInputRef.current?.click()}
-                                            onTimeSyncUpload={(e) => {
-                                                const file = e.target.files?.[0];
-                                                if (file) {
-                                                    Papa.parse(file, {
-                                                        header: true,
-                                                        skipEmptyLines: true,
-                                                        complete: (r) => setTimeSyncData(processTimeSyncData(r.data))
-                                                    });
-                                                }
-                                            }}
-                                        />
-                                    </>
-                                )}
-                            </>
-                        )}
+            {/* MAIN */}
+            <main className="flex-1 overflow-y-auto bg-slate-50 relative custom-scrollbar h-screen">
+                <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-slate-200 px-8 py-4 flex flex-col md:flex-row items-center justify-between gap-4 no-print shadow-sm">
+                    <div className="flex items-center gap-4">
+                        <button onClick={() => setSidebarExpanded(!sidebarExpanded)} className="bg-slate-100 p-2.5 rounded-xl hover:bg-slate-200 transition-all text-slate-600"><Menu className="w-5 h-5" /></button>
+                        <div className="bg-indigo-600 p-2 rounded-xl"><LayoutDashboard className="w-5 h-5 text-white" /></div>
+                        <div>
+                            <h2 className="text-lg font-black text-slate-900 leading-none uppercase tracking-tight">Analytics Dashboard</h2>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Biosalud 2.0</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <button onClick={() => window.print()} className="p-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200"><Printer className="w-5 h-5" /></button>
+                    </div>
+                </header>
 
-                        {activeTab === 'invoices' && (
-                            <>
-                                {(!invoiceData || invoiceData.length === 0) ? (
-                                    <div className="text-center mt-20 max-w-xl mx-auto">
-                                        <div className="bg-white p-12 rounded-3xl border border-gray-100 shadow-xl">
-                                            <div className="bg-blue-50 w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-6">
-                                                <FileText className="w-10 h-10 text-blue-600" />
-                                            </div>
-                                            <h2 className="text-3xl font-black mb-4">Auditoría Fiscal</h2>
-                                            <p className="text-gray-500 mb-8 font-medium">Cargue sus comprobantes de facturación para habilitar filtros de obras sociales y entidades.</p>
-                                            <button onClick={() => invoiceFileInputRef.current?.click()} className="bg-blue-600 text-white px-10 py-4 rounded-2xl font-black shadow-lg shadow-blue-200 hover:bg-blue-700 transition-all flex items-center gap-3 mx-auto">
-                                                <Upload className="w-5 h-5" /> Subir Facturación
-                                            </button>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <>
-                                        <div className="mb-8 flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
-                                            <h2 className="text-2xl font-black tracking-tight text-blue-900">Módulo de Facturación</h2>
-                                            <button onClick={() => invoiceFileInputRef.current?.click()} className="text-blue-600 border border-blue-100 px-4 py-2 rounded-xl text-sm font-bold hover:bg-blue-50 transition-all">Sincronizar más datos</button>
-                                        </div>
-                                        <InvoiceDashboard
-                                            data={invoiceData}
-                                            salesData={salesData || []}
-                                            expenseData={expenseData || []}
-                                            serviceData={serviceData || []}
-                                            startDate={startDate}
-                                            endDate={endDate}
-                                            onStartDateChange={setStartDate}
-                                            onEndDateChange={setEndDate}
-                                        />
-                                    </>
-                                )}
-                            </>
-                        )}
-
-                        {activeTab === 'expenses' && (
-                            <>
-                                {(!expenseData || expenseData.length === 0) ? (
-                                    <div className="text-center mt-20 max-w-xl mx-auto">
-                                        <div className="bg-white p-12 rounded-3xl border border-gray-100 shadow-xl">
-                                            <div className="bg-orange-50 w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-6">
-                                                <ShoppingCart className="w-10 h-10 text-orange-600" />
-                                            </div>
-                                            <h2 className="text-3xl font-black mb-4">Gestión de Proveedores</h2>
-                                            <p className="text-gray-500 mb-8 font-medium">Controle vencimientos, facturas de compra y rotación de stock por proveedor.</p>
-                                            <button onClick={() => expenseFileInputRef.current?.click()} className="bg-orange-600 text-white px-10 py-4 rounded-2xl font-black shadow-lg shadow-orange-200 hover:bg-orange-700 transition-all flex items-center gap-3 mx-auto">
-                                                <Upload className="w-5 h-5" /> Subir Reporte Proveedores
-                                            </button>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <>
-                                        <div className="mb-8 flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
-                                            <h2 className="text-2xl font-black tracking-tight text-orange-900">Control de Proveedores</h2>
-                                            <button onClick={() => expenseFileInputRef.current?.click()} className="text-orange-600 border border-orange-100 px-4 py-2 rounded-xl text-sm font-bold hover:bg-orange-50 transition-all">Sincronizar compras</button>
-                                        </div>
-                                        <ExpensesDashboard
-                                            data={expenseData}
-                                            startDate={startDate}
-                                            endDate={endDate}
-                                            onStartDateChange={setStartDate}
-                                            onEndDateChange={setEndDate}
-                                        />
-                                    </>
-                                )}
-                            </>
-                        )}
-
-                        {activeTab === 'services' && (
-                            <>
-                                {(!serviceData || serviceData.length === 0) ? (
-                                    <div className="text-center mt-20 max-w-xl mx-auto">
-                                        <div className="bg-white p-12 rounded-3xl border border-gray-100 shadow-xl">
-                                            <div className="bg-blue-50 w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-6">
-                                                <Lightbulb className="w-10 h-10 text-blue-500" />
-                                            </div>
-                                            <h2 className="text-3xl font-black mb-4">Gastos de Servicios</h2>
-                                            <p className="text-gray-500 mb-8 font-medium">Separe los gastos operativos (luz, agua, limpieza) de la mercadería.</p>
-                                            <button onClick={() => serviceFileInputRef.current?.click()} className="bg-blue-500 text-white px-10 py-4 rounded-2xl font-black shadow-lg shadow-blue-100 hover:bg-blue-600 transition-all flex items-center gap-3 mx-auto">
-                                                <Upload className="w-5 h-5" /> Subir Gastos Externos
-                                            </button>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <>
-                                        <div className="mb-8 flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
-                                            <h2 className="text-2xl font-black tracking-tight text-blue-800">Gastos Operativos</h2>
-                                            <button onClick={() => serviceFileInputRef.current?.click()} className="text-blue-500 border border-blue-100 px-4 py-2 rounded-xl text-sm font-bold hover:bg-blue-50 transition-all">Actualizar servicios</button>
-                                        </div>
-                                        <ServicesDashboard
-                                            data={serviceData}
-                                            startDate={startDate}
-                                            endDate={endDate}
-                                            onStartDateChange={setStartDate}
-                                            onEndDateChange={setEndDate}
-                                        />
-                                    </>
-                                )}
-                            </>
-                        )}
-
-                        {activeTab === 'debts' && (
-                            <>
-                                {(!currentAccountData || currentAccountData.length === 0) ? (
-                                    <div className="text-center mt-20 max-w-xl mx-auto">
-                                        <div className="bg-white p-12 rounded-3xl border border-gray-100 shadow-xl">
-                                            <div className="bg-teal-50 w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-6">
-                                                <Wallet className="w-10 h-10 text-teal-600" />
-                                            </div>
-                                            <h2 className="text-3xl font-black mb-4">Cuentas Corrientes</h2>
-                                            <p className="text-gray-500 mb-8 font-medium">Controle saldos históricos y deudas pendientes de clientes y proveedores.</p>
-                                            <button onClick={() => currentAccountFileInputRef.current?.click()} className="bg-teal-600 text-white px-10 py-4 rounded-2xl font-black shadow-lg shadow-teal-100 hover:bg-teal-700 transition-all flex items-center gap-3 mx-auto">
-                                                <Upload className="w-5 h-5" /> Subir Ctas Ctes
-                                            </button>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <>
-                                        <div className="mb-8 flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
-                                            <h2 className="text-2xl font-black tracking-tight text-teal-900">Estado de Cuenta Sincronizado</h2>
-                                            <button onClick={() => currentAccountFileInputRef.current?.click()} className="text-teal-600 border border-teal-100 px-4 py-2 rounded-xl text-sm font-bold hover:bg-teal-50 transition-all">Sincronizar saldos</button>
-                                        </div>
-                                        <CurrentAccountDashboard data={currentAccountData} />
-                                    </>
-                                )}
-                            </>
-                        )}
-
-                        {activeTab === 'zetti' && (
-                            <div className="animate-in fade-in zoom-in duration-300">
-                                <ZettiSync
+                <div className="p-8">
+                    {loading ? (
+                        <div className="flex flex-col items-center justify-center py-20 space-y-4">
+                            <RefreshCw className="w-12 h-12 text-indigo-500 animate-spin" />
+                            <p className="text-slate-500 font-bold animate-pulse">Cargando base de datos...</p>
+                        </div>
+                    ) : (
+                        <div className="max-w-[1600px] mx-auto">
+                            {activeTab === 'sales' && (
+                                <Dashboard
+                                    data={enrichedSalesData || []}
+                                    stockData={stockData || []}
+                                    expenseData={expenseData || []}
+                                    onSelectSeller={setSelectedSeller}
+                                    selectedSeller={selectedSeller}
+                                    selectedBranch={selectedBranch}
+                                    onSelectBranch={setSelectedBranch}
                                     startDate={startDate}
                                     endDate={endDate}
-                                    onDataImported={handleZettiImport}
+                                    onStartDateChange={setStartDate}
+                                    onEndDateChange={setEndDate}
+                                    onPrintReport={() => setShowReport(true)}
+                                    excludedProducts={excludedProducts}
+                                    includedProducts={includedProducts}
+                                    onToggleExclusion={(p) => setExcludedProducts(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p])}
+                                    onToggleInclusion={(p) => setIncludedProducts(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p])}
+                                    excludedEntities={excludedEntities}
+                                    includedEntities={includedEntities}
+                                    onToggleEntityExclusion={(e) => setExcludedEntities(prev => prev.includes(e) ? prev.filter(x => x !== e) : [...prev, e])}
+                                    onToggleEntityInclusion={(e) => setIncludedEntities(prev => prev.includes(e) ? prev.filter(x => x !== e) : [...prev, e])}
                                 />
-                            </div>
-                        )}
+                            )}
+                            {activeTab === 'sellers' && (
+                                <SellersDashboard
+                                    data={enrichedSalesData || []}
+                                    sellersList={uniqueSellers}
+                                    startDate={startDate}
+                                    endDate={endDate}
+                                    excludedProducts={excludedProducts}
+                                    includedProducts={includedProducts}
+                                    excludedEntities={excludedEntities}
+                                    includedEntities={includedEntities}
+                                />
+                            )}
+                            {activeTab === 'invoices' && (
+                                <InvoiceDashboard
+                                    data={invoiceData || []}
+                                    salesData={salesData || []}
+                                    startDate={startDate}
+                                    endDate={endDate}
+                                    onStartDateChange={setStartDate}
+                                    onEndDateChange={setEndDate}
+                                    selectedBranch={selectedBranch}
+                                    onSelectBranch={setSelectedBranch}
+                                    onUpload={handleInvoiceUpload}
+                                />
+                            )}
+                            {activeTab === 'crossed' && <CrossedAnalytics salesData={salesData || []} invoiceData={invoiceData || []} expenseData={expenseData || []} serviceData={serviceData || []} startDate={startDate} endDate={endDate} onStartDateChange={setStartDate} onEndDateChange={setEndDate} />}
+                            {activeTab === 'expenses' && (
+                                <ExpensesDashboard
+                                    data={expenseData || []}
+                                    startDate={startDate}
+                                    endDate={endDate}
+                                    onStartDateChange={setStartDate}
+                                    onEndDateChange={setEndDate}
+                                    selectedBranch={selectedBranch}
+                                    onSelectBranch={setSelectedBranch}
+                                    onUpload={handleExpenseUpload}
+                                />
+                            )}
+                            {activeTab === 'services' && (
+                                <ServicesDashboard
+                                    data={serviceData || []}
+                                    startDate={startDate}
+                                    endDate={endDate}
+                                    onStartDateChange={setStartDate}
+                                    onEndDateChange={setEndDate}
+                                    selectedBranch={selectedBranch}
+                                    onSelectBranch={setSelectedBranch}
+                                    onUpload={handleServiceUpload}
+                                />
+                            )}
+                            {activeTab === 'debts' && <CurrentAccountDashboard data={currentAccountData || []} />}
+                            {activeTab === 'zetti' && <ZettiSync startDate={startDate} endDate={endDate} onDataImported={handleZettiImport} />}
+                            {activeTab === 'shopping' && <ShoppingAssistant salesData={enrichedSalesData || []} stockData={stockData || []} onSelectProduct={(p) => { setActiveTab('sales'); }} />}
+                            {activeTab === 'mixMaestro' && (
+                                <MixMaestroDashboard
+                                    data={unifiedFromSales}
+                                    expenseData={expenseData || []}
+                                    serviceData={serviceData || []}
+                                    startDate={startDate}
+                                    endDate={endDate}
+                                    onStartDateChange={setStartDate}
+                                    onEndDateChange={setEndDate}
+                                    selectedBranch={selectedBranch}
+                                    onSelectBranch={setSelectedBranch}
+                                />
+                            )}
+                        </div>
+                    )}
+                </div>
 
-                        {activeTab === 'crossed' && (
-                            <div className="animate-in fade-in zoom-in duration-300">
-                                {enrichedSalesData && invoiceData && invoiceData.length > 0 ? (
-                                    <CrossedAnalytics
-                                        salesData={enrichedSalesData}
-                                        invoiceData={invoiceData}
-                                        expenseData={expenseData || []}
-                                        serviceData={serviceData || []}
-                                        startDate={startDate}
-                                        endDate={endDate}
-                                        onStartDateChange={setStartDate}
-                                        onEndDateChange={setEndDate}
-                                    />
-                                ) : (
-                                    <div className="text-center bg-white p-20 rounded-3xl border border-gray-100 italic text-gray-400">
-                                        Se requieren datos de Ventas y Comprobantes para generar cruces.
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                        {activeTab === 'shopping' && (
-                            <div className="animate-in fade-in zoom-in duration-300">
-                                <ShoppingAssistant salesData={salesData || []} />
-                            </div>
-                        )}
-                    </div>
+                {showReport && (
+                    <PrintReport
+                        salesData={enrichedSalesData || []}
+                        startDate={startDate}
+                        endDate={endDate}
+                        onClose={() => setShowReport(false)}
+                    />
                 )}
             </main>
         </div>
     );
 };
+
 
 export default App;

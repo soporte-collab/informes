@@ -1,49 +1,102 @@
 import React, { useMemo, useState } from 'react';
 import { SaleRecord } from '../types';
-import { format, getDay, getHours } from 'date-fns';
-import { es } from 'date-fns/locale';
-import { Grid, Calculator, Hash } from 'lucide-react';
+import { Grid, Calculator, Hash, Zap } from 'lucide-react';
 
 interface SalesHeatmapProps {
     data: SaleRecord[];
     onCellClick?: (dayIndex: number, hour: number, dayName: string) => void;
 }
 
-export const SalesHeatmap: React.FC<SalesHeatmapProps> = ({ data, onCellClick }) => {
-    const [mode, setMode] = useState<'count' | 'average'>('count');
+interface HeatmapCell {
+    day: number;
+    hour: number;
+    value: number;
+    count: number;
+    intervals: number[]; // 6 buckets of 10 mins each
+    efficiency: number; // 0-100
+}
 
-    const heatmapData = useMemo(() => {
+export const SalesHeatmap: React.FC<SalesHeatmapProps> = ({ data, onCellClick }) => {
+    const [mode, setMode] = useState<'count' | 'average' | 'efficiency'>('efficiency');
+
+    // Calculate Heatmap Data
+    const { flatData, maxCount, maxAverage, globalEfficiency, totalActiveMinutes, totalDeadMinutes } = useMemo(() => {
         // Initialize 7 days x 24 hours grid
-        const grid = Array.from({ length: 7 }, (_, day) =>
-            Array.from({ length: 24 }, (_, hour) => ({ day, hour, value: 0, count: 0 }))
+        const grid: HeatmapCell[][] = Array.from({ length: 7 }, (_, day) =>
+            Array.from({ length: 24 }, (_, hour) => ({
+                day,
+                hour,
+                value: 0,
+                count: 0,
+                intervals: new Array(6).fill(0),
+                efficiency: 0
+            }))
         );
 
         // Populate grid
-        data.forEach(d => {
-            const date = d.date;
-            const day = getDay(date); // 0 (Sun) - 6 (Sat)
-            const hour = getHours(date);
-
-            // Adjust Day to make Monday = 0
-            // date-fns getDay: 0=Sun, 1=Mon, ..., 6=Sat
-            // We want: 0=Mon, 1=Tue, ..., 5=Sat, 6=Sun
-            const adjustedDay = day === 0 ? 6 : day - 1;
+        (data || []).forEach(d => {
+            const date = new Date(d.date);
+            const day = date.getDay(); // 0 (Sun) - 6 (Sat)
+            const hour = date.getHours();
+            const minutes = date.getMinutes();
+            const minuteBucket = Math.floor(minutes / 10); // 0, 1, 2, 3, 4, 5
+            const adjustedDay = day === 0 ? 6 : day - 1; // Mon=0, Sun=6
 
             if (grid[adjustedDay] && grid[adjustedDay][hour]) {
                 grid[adjustedDay][hour].value += d.totalAmount;
                 grid[adjustedDay][hour].count += 1;
+                if (grid[adjustedDay][hour].intervals[minuteBucket] !== undefined) {
+                    grid[adjustedDay][hour].intervals[minuteBucket]++;
+                }
             }
         });
 
-        // Flatten for Recharts Scatter/Heatmap simulation
+        // Flatten & Stats
         const flatData = [];
         const days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
+        let localMaxCount = 0;
+        let localMaxAverage = 0;
+        let activeBlocksCount = 0;
+
+        // Business Hours: 08:00 to 20:30
+        const START_HOUR = 8;
+        const END_HOUR = 20; // Includes 20:00-20:59, we'll cap efficiency at 20:30 logic
+
+        let calculatedDeadMins = 0;
+
         for (let d = 0; d < 7; d++) {
-            for (let h = 8; h <= 22; h++) { // Filter functional hours (8am to 10pm)
-                const count = grid[d][h].count;
-                const value = grid[d][h].value;
+            for (let h = START_HOUR; h <= END_HOUR; h++) {
+                const cell = grid[d][h];
+                const count = cell.count;
+                const value = cell.value;
                 const average = count > 0 ? value / count : 0;
+
+                // Calculate Efficiency (Occupancy)
+                const activeBlocks = cell.intervals.filter(x => x > 0).length;
+                activeBlocksCount += activeBlocks;
+
+                // Logic for 20:30 Close time
+                // For hour 20, only blocks 0,1,2 are valid (00-30). 
+                const validBlocks = (h === 20) ? 3 : 6;
+
+                // Efficiency relative to VALID blocks
+                let efficiency = (activeBlocks / validBlocks) * 100;
+                // Cap at 100% (in case sales happen after 20:30, treated as bonus/overtime but displayed as full)
+                if (efficiency > 100) efficiency = 100;
+
+                cell.efficiency = efficiency; // Store for usage in visuals
+
+                // Dead Minutes Calculation
+                // Count how many VALID blocks had 0 sales
+                for (let i = 0; i < validBlocks; i++) {
+                    if (cell.intervals[i] === 0) {
+                        calculatedDeadMins += 10;
+                    }
+                }
+
+                if (count > localMaxCount) localMaxCount = count;
+                if (average > localMaxAverage) localMaxAverage = average;
 
                 flatData.push({
                     dayIndex: d,
@@ -52,128 +105,226 @@ export const SalesHeatmap: React.FC<SalesHeatmapProps> = ({ data, onCellClick })
                     value: value,
                     count: count,
                     average: average,
-                    intensity: mode === 'count' ? count : average
+                    efficiency: efficiency,
+                    intervals: cell.intervals
                 });
             }
         }
-        return flatData;
-    }, [data, mode]);
 
-    // Find max for scaling color
-    const maxVal = Math.max(...heatmapData.map(d => d.intensity));
+        const activeMins = activeBlocksCount * 10;
 
-    const getColor = (val: number) => {
-        const intensity = val / (maxVal || 1);
-        // Purple scale for count, Green scale for average
-        if (intensity === 0) return '#f3f4f6';
+        // Potential Time: 7 days * (12 hours * 60 + 30 mins) = 7 * 750 = 5250
+        const potentialMinutes = 5250;
+        const efficiencyPerc = (activeMins / potentialMinutes) * 100;
 
+        return {
+            flatData,
+            maxCount: localMaxCount,
+            maxAverage: localMaxAverage,
+            globalEfficiency: efficiencyPerc,
+            totalActiveMinutes: activeMins,
+            totalDeadMinutes: calculatedDeadMins
+        };
+    }, [data]);
+
+    // Color Scales
+    const getColor = (cell: any) => {
         if (mode === 'count') {
-            if (intensity < 0.2) return '#e9d5ff'; // purple-200
-            if (intensity < 0.4) return '#c084fc'; // purple-400
-            if (intensity < 0.6) return '#a855f7'; // purple-500
-            if (intensity < 0.8) return '#9333ea'; // purple-600
-            return '#7e22ce'; // purple-700
-        } else {
-            // green scale for Average Ticket
-            if (intensity < 0.2) return '#dcfce7'; // green-100
-            if (intensity < 0.4) return '#86efac'; // green-300
-            if (intensity < 0.6) return '#4ade80'; // green-400
-            if (intensity < 0.8) return '#22c55e'; // green-500
-            return '#16a34a'; // green-600
+            const intensity = cell.count / (maxCount || 1);
+            if (cell.count === 0) return 'bg-slate-50';
+            if (intensity < 0.25) return 'bg-indigo-100';
+            if (intensity < 0.5) return 'bg-indigo-300';
+            if (intensity < 0.75) return 'bg-indigo-500';
+            return 'bg-indigo-700';
+        }
+        if (mode === 'efficiency') {
+            if (cell.efficiency === 0) return 'bg-red-50';
+            if (cell.efficiency <= 25) return 'bg-red-200';
+            if (cell.efficiency <= 50) return 'bg-orange-300';
+            if (cell.efficiency <= 75) return 'bg-lime-300';
+            // if (cell.efficiency <= 90) return 'bg-emerald-400';
+            return 'bg-emerald-600';
+        }
+        else {
+            const intensity = cell.average / (maxAverage || 1);
+            if (cell.value === 0) return 'bg-slate-50';
+            if (intensity < 0.25) return 'bg-emerald-100';
+            if (intensity < 0.5) return 'bg-emerald-300';
+            if (intensity < 0.75) return 'bg-emerald-500';
+            return 'bg-emerald-700';
         }
     };
 
     return (
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-full">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-                <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                    <Grid className="w-5 h-5 text-gray-400" />
-                    Mapa de Calor {mode === 'count' ? '(Tráfico/Tickets)' : '(Ticket Promedio)'}
-                </h3>
+        <div className="w-full">
+            {/* Header Controls */}
+            <div className="flex flex-col sm:flex-row items-center justify-between mb-6 gap-4">
+                <div className="flex items-center gap-2">
+                    <Grid className="w-5 h-5 text-slate-400" />
+                    <h4 className="font-bold text-slate-700">Mapa de Calor</h4>
+                </div>
 
-                <div className="flex bg-gray-100 p-1 rounded-lg">
+                {/* Mode Toggles */}
+                <div className="flex bg-slate-100 p-1 rounded-xl">
                     <button
                         onClick={() => setMode('count')}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${mode === 'count' ? 'bg-white shadow text-purple-700' : 'text-gray-500 hover:text-gray-700'}`}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${mode === 'count' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                     >
-                        <Hash className="w-3.5 h-3.5" />
-                        Tickets
+                        <Hash className="w-3 h-3" />
+                        Tráfico
+                    </button>
+                    <button
+                        onClick={() => setMode('efficiency')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${mode === 'efficiency' ? 'bg-white text-red-500 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                        <Zap className="w-3 h-3" />
+                        Eficiencia
                     </button>
                     <button
                         onClick={() => setMode('average')}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${mode === 'average' ? 'bg-white shadow text-green-700' : 'text-gray-500 hover:text-gray-700'}`}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${mode === 'average' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                     >
-                        <Calculator className="w-3.5 h-3.5" />
+                        <Calculator className="w-3 h-3" />
                         Ticket Prom.
                     </button>
                 </div>
             </div>
 
-            <div className="h-80 w-full overflow-x-auto p-4 custom-scrollbar">
-                <div className="min-w-[600px] h-full flex flex-col gap-1">
-                    <div className="flex">
-                        <div className="w-20"></div> {/* Y-Axis Label Space */}
-                        <div className="flex-1 flex justify-between text-xs text-gray-400 px-2 pb-2">
-                            {Array.from({ length: 15 }, (_, i) => i + 8).map(h => (
-                                <div key={h} className="w-full text-center">{h}h</div>
+            {/* NEW METRICS STRIP */}
+            {mode === 'efficiency' && (
+                <div className="grid grid-cols-3 gap-4 mb-6 animate-in fade-in slide-in-from-top-4 duration-500">
+                    <div className="bg-emerald-50 border border-emerald-100 p-3 rounded-xl flex flex-col items-center">
+                        <span className="text-[10px] font-bold uppercase text-emerald-400 tracking-widest">Tiempo Activo</span>
+                        <span className="text-xl font-black text-emerald-700">{(totalActiveMinutes / 60).toFixed(1)} hs</span>
+                        <span className="text-[9px] text-emerald-600/60 font-medium">Intervalos con venta</span>
+                    </div>
+                    <div className="bg-red-50 border border-red-100 p-3 rounded-xl flex flex-col items-center">
+                        <span className="text-[10px] font-bold uppercase text-red-400 tracking-widest">Horas Muertas</span>
+                        <span className="text-xl font-black text-red-600">{(totalDeadMinutes / 60).toFixed(1)} hs</span>
+                        <span className="text-[9px] text-red-600/60 font-medium font-bold">8:00 - 20:30 hs sin ventas</span>
+                    </div>
+                    <div className="bg-slate-50 border border-slate-100 p-3 rounded-xl flex flex-col items-center">
+                        <span className="text-[10px] font-bold uppercase text-slate-400 tracking-widest">Eficiencia Global</span>
+                        <span className="text-xl font-black text-slate-700">{globalEfficiency.toFixed(1)}%</span>
+                        <span className="text-[9px] text-slate-500 font-medium">Ocupación comercial</span>
+                    </div>
+                </div>
+            )}
+
+            {/* Heatmap Grid */}
+            <div className="overflow-x-auto pb-4 custom-scrollbar">
+                <div className="min-w-[700px]">
+                    {/* Hours Header */}
+                    <div className="grid grid-cols-[80px_repeat(13,1fr)] gap-1 mb-2">
+                        <div className="col-start-2 col-span-13 flex justify-between px-2">
+                            {Array.from({ length: 13 }, (_, i) => i + 8).map(h => (
+                                <span key={h} className="text-[10px] font-bold text-slate-400 text-center w-full">{h}h</span>
                             ))}
                         </div>
                     </div>
-                    {['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'].map((dayName, dayIdx) => (
-                        <div key={dayName} className="flex flex-1 items-center">
-                            <div className="w-20 text-xs font-medium text-gray-500 text-right pr-4">{dayName}</div>
-                            <div className="flex-1 flex gap-1 h-full">
-                                {heatmapData
-                                    .filter(d => d.dayIndex === dayIdx)
-                                    .sort((a, b) => a.hour - b.hour)
-                                    .map((cell) => {
-                                        const isTopRow = dayIdx < 2; // Show tooltip below for first 2 rows
-                                        return (
-                                            <div
-                                                key={`${cell.dayIndex}-${cell.hour}`}
-                                                className="flex-1 rounded-sm relative group cursor-pointer transition-colors"
-                                                style={{ backgroundColor: getColor(cell.intensity) }}
-                                                onClick={() => onCellClick?.(cell.dayIndex, cell.hour, dayName)}
-                                            >
-                                                <div className={`hidden group-hover:block absolute left-1/2 -translate-x-1/2 w-max min-w-[120px] bg-gray-900 text-white text-xs rounded-lg p-3 z-50 shadow-xl pointer-events-none transform transition-all ${isTopRow ? 'top-[110%]' : 'bottom-[110%]'}`}>
-                                                    <div className="font-bold border-b border-gray-700 pb-1 mb-1">{dayName} {cell.hour}:00</div>
-                                                    <div className="flex justify-between gap-4">
-                                                        <span>Tickets:</span>
-                                                        <span className="font-mono font-bold text-blue-200">{cell.count}</span>
-                                                    </div>
-                                                    <div className="flex justify-between gap-4">
-                                                        <span>Ticket Promedio:</span>
-                                                        <span className="font-mono font-bold text-yellow-300">
-                                                            ${Math.round(cell.average).toLocaleString()}
-                                                        </span>
-                                                    </div>
-                                                    <div className="flex justify-between gap-4">
-                                                        <span>Total Ventas:</span>
-                                                        <span className="font-mono font-bold text-green-300">${Math.round(cell.value).toLocaleString()}</span>
-                                                    </div>
-                                                    <div className={`absolute left-1/2 -translate-x-1/2 w-3 h-3 bg-gray-900 rotate-45 ${isTopRow ? 'top-[-6px]' : 'bottom-[-6px]'}`}></div>
+
+                    {/* Days Rows */}
+                    {['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'].map((dayName, dIndex) => (
+                        <div key={dayName} className="grid grid-cols-[80px_repeat(13,1fr)] gap-1 mb-1 items-center group/row">
+                            <span className="text-[11px] font-semibold text-slate-500 text-right pr-3">{dayName}</span>
+
+                            {flatData.filter(d => d.dayIndex === dIndex).map((cell, idx) => {
+                                const isTopRow = dIndex < 2;
+                                const maxInterval = Math.max(...cell.intervals, 1);
+
+                                // Tooltip positioning logic
+                                const tooltipPos = isTopRow ? 'top-[110%]' : 'bottom-[110%]';
+                                const pointerPos = isTopRow ? 'top-[-6px]' : 'bottom-[-6px]';
+
+                                return (
+                                    <div
+                                        key={idx}
+                                        className={`relative h-10 w-full rounded-md transition-all duration-300 hover:scale-110 hover:z-20 cursor-pointer group flex items-end justify-center px-[2px] pb-[1px] gap-[1px] border border-white/50 ${getColor(cell)}`}
+                                        onClick={() => onCellClick && onCellClick(cell.dayIndex, cell.hour, cell.dayName)}
+                                    >
+                                        {/* MINI BARS INSIDE CELL */}
+                                        {mode === 'efficiency' && cell.intervals.map((val, k) => (
+                                            <div key={k} className={`w-full rounded-[1px] ${val > 0 ? 'bg-white/60 h-[70%]' : 'bg-black/5 h-[20%]'}`} />
+                                        ))}
+
+                                        {/* TOOLTIP */}
+                                        <div className={`hidden group-hover:block absolute left-1/2 -translate-x-1/2 w-max min-w-[200px] bg-slate-900 text-white text-[10px] rounded-xl p-4 z-50 shadow-2xl pointer-events-none transform transition-all ring-1 ring-white/10 ${tooltipPos}`}>
+                                            <div className="font-black border-b border-white/10 pb-2 mb-3 flex justify-between items-center pr-2">
+                                                <span className="text-base text-white">{dayName}</span>
+                                                <span className="text-emerald-400 text-lg">{cell.hour}:00 hs</span>
+                                            </div>
+
+                                            <div className="grid grid-cols-2 gap-4 mb-4">
+                                                <div>
+                                                    <p className="text-slate-500 uppercase font-bold text-[9px] mb-0.5">Tickets</p>
+                                                    <p className="font-black text-xl text-white">{cell.count}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-slate-500 uppercase font-bold text-[9px] mb-0.5">Venta Neta</p>
+                                                    <p className="font-black text-xl text-emerald-400">${Math.round(cell.value).toLocaleString()}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-slate-500 uppercase font-bold text-[9px] mb-0.5">Ocupación</p>
+                                                    <p className={`font-black text-xl ${cell.efficiency > 50 ? 'text-green-400' : 'text-red-400'}`}>{Math.round(cell.efficiency)}%</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-slate-500 uppercase font-bold text-[9px] mb-0.5">Ticket Prom.</p>
+                                                    <p className="font-black text-xl text-yellow-400">${Math.round(cell.average).toLocaleString()}</p>
                                                 </div>
                                             </div>
-                                        );
-                                    })}
-                            </div>
+
+                                            <div className="pt-3 border-t border-white/10">
+                                                <p className="text-[9px] font-bold text-slate-400 uppercase mb-3 tracking-widest flex justify-between">
+                                                    <span>Minuto a Minuto (10')</span>
+                                                </p>
+                                                <div className="flex items-end justify-between h-12 gap-1 px-1">
+                                                    {cell.intervals.map((cnt, i) => {
+                                                        const hPerc = (cnt / (maxInterval || 1)) * 100;
+                                                        const isActive = cnt > 0;
+                                                        return (
+                                                            <div key={i} className="flex-1 flex flex-col items-center gap-1 group/bar relative">
+                                                                <div className="absolute bottom-full mb-1 opacity-0 group-hover/bar:opacity-100 text-[9px] bg-white text-slate-900 px-1 rounded font-bold transition-opacity whitespace-nowrap z-50">
+                                                                    {cnt} tkt
+                                                                </div>
+                                                                <div
+                                                                    className={`w-full rounded-sm transition-all duration-300 ${isActive ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-white/5 border border-white/10'}`}
+                                                                    style={{ height: isActive ? `${Math.max(15, hPerc)}%` : '4px' }}
+                                                                />
+                                                                <span className={`text-[8px] font-mono tracking-tighter ${isActive ? 'text-white font-bold' : 'text-slate-600'}`}>{i * 10}'</span>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                            <div className={`absolute left-1/2 -translate-x-1/2 w-3 h-3 bg-slate-900 rotate-45 ring-1 ring-white/10 ${pointerPos}`}></div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
                         </div>
                     ))}
                 </div>
             </div>
-            <div className="flex justify-end items-center gap-4 mt-4 text-xs text-gray-500">
-                <span className="font-medium mr-2">Intensidad ({mode === 'count' ? 'Tickets' : 'Ticket Prom.'}):</span>
+
+            <div className="flex items-center justify-between mt-4 border-t border-slate-100 pt-3">
+                <p className="text-[10px] text-slate-400 font-medium italic">
+                    * Horario Comercial Configurado: 08:00 a 20:30 hs.
+                </p>
                 <div className="flex items-center gap-2">
-                    <div className={`w-3 h-3 rounded-sm ${mode === 'count' ? 'bg-[#e9d5ff]' : 'bg-[#dcfce7]'}`}></div>
-                    <span>Baja</span>
-                </div>
-                <div className="flex items-center gap-2">
-                    <div className={`w-3 h-3 rounded-sm ${mode === 'count' ? 'bg-[#a855f7]' : 'bg-[#4ade80]'}`}></div>
-                    <span>Media</span>
-                </div>
-                <div className="flex items-center gap-2">
-                    <div className={`w-3 h-3 rounded-sm ${mode === 'count' ? 'bg-[#7e22ce]' : 'bg-[#16a34a]'}`}></div>
-                    <span>Alta</span>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase mr-1">Intensidad:</span>
+                    {mode === 'efficiency' ? (
+                        <>
+                            <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-red-50 border border-slate-200"></div><span className="text-[9px] text-slate-500">Muerto</span></div>
+                            <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-yellow-300"></div><span className="text-[9px] text-slate-500">Medio</span></div>
+                            <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-emerald-600"></div><span className="text-[9px] text-slate-500">Pleno</span></div>
+                        </>
+                    ) : (
+                        <>
+                            <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-indigo-100"></div><span className="text-[9px] text-slate-500">Baja</span></div>
+                            <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-indigo-400"></div><span className="text-[9px] text-slate-500">Media</span></div>
+                            <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-sm bg-indigo-700"></div><span className="text-[9px] text-slate-500">Alta</span></div>
+                        </>
+                    )}
                 </div>
             </div>
         </div>

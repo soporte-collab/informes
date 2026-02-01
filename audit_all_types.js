@@ -21,50 +21,112 @@ async function getZettiToken() {
 
 async function countTypes(nodeId, nodeName, date) {
     const token = await getZettiToken();
-    let all = [];
-    let page = 1;
-
-    while (true) {
-        const url = `${ZETTI_CONFIG.api_url}/v2/${nodeId}/sales-receipts/search?page=${page}&pageSize=50`;
-        const res = await fetch(url, {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
+    const url = `${ZETTI_CONFIG.api_url}/v2/${nodeId}/sales-receipts/search?page=1&pageSize=50`;
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            request: {
                 emissionDateFrom: `${date}T00:00:00.000-0300`,
                 emissionDateTo: `${date}T23:59:59.999-0300`
-            })
-        });
-        const data = await res.json();
-        const list = Array.isArray(data) ? data : (data.content || []);
-        if (list.length === 0) break;
-        all = [...all, ...list];
-        if (list.length < 50) break;
-        page++;
-    }
-
+            }
+        })
+    });
+    const data = await res.json();
+    const list = data.content || [];
     const types = {};
-    all.forEach(inv => {
+    list.forEach(inv => {
         const t = inv.valueType?.name || 'DESCONOCIDO';
         types[t] = (types[t] || 0) + 1;
     });
 
     console.log(`\n--- RESULTADOS PARA ${nodeName} (${date}) ---`);
-    console.log(`Total Comprobantes: ${all.length}`);
+    console.log(`Total Comprobantes: ${list.length}`);
     console.log(`Desglose por Tipo:`, JSON.stringify(types, null, 2));
+}
 
-    // Buscar posibles duplicados de número
-    const cods = new Set();
-    const dups = [];
-    all.forEach(inv => {
-        if (cods.has(inv.codification)) dups.push(inv.codification);
-        cods.add(inv.codification);
+async function auditExpenses(nodeId, nodeName, date) {
+    const token = await getZettiToken();
+    const url = `${ZETTI_CONFIG.api_url}/v2/${nodeId}/providers/receipts/search`;
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            request: {
+                emissionDateFrom: `${date}T00:00:00.000-0300`,
+                emissionDateTo: `${date}T23:59:59.999-0300`
+            }
+        })
     });
-    if (dups.length > 0) console.log(`OJO: Hay ${dups.length} números repetidos en Zetti:`, dups);
+    const data = await res.json();
+    const list = data.content || [];
+    console.log(`\n--- GASTOS (PROV) PARA ${nodeName} (${date}) ---`);
+    console.log(`Total Gastos: ${list.length}`);
+    if (list.length > 0) console.log(`Ejemplo Gasto:`, JSON.stringify(list[0], null, 2));
+}
+
+async function auditInsurance(nodeId, nodeName, date) {
+    const token = await getZettiToken();
+    const url = `${ZETTI_CONFIG.api_url}/v2/${nodeId}/health-insurance-providers/receipts/search`;
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            request: {
+                emissionDateFrom: `${date}T00:00:00.000-0300`,
+                emissionDateTo: `${date}T23:59:59.999-0300`
+            }
+        })
+    });
+    const data = await res.json();
+    const list = data.content || [];
+    console.log(`\n--- OBRAS SOCIALES PARA ${nodeName} (${date}) ---`);
+    console.log(`Total Liquidaciones: ${list.length}`);
+    if (list.length > 0) console.log(`Ejemplo Liquidación:`, JSON.stringify(list[0], null, 2));
+}
+
+async function auditBalances(nodeId, nodeName) {
+    const token = await getZettiToken();
+    const url = `${ZETTI_CONFIG.api_url}/v2/${nodeId}/customers/search?page=1&pageSize=10`;
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            request: {}
+        })
+    });
+    const data = await res.json();
+    const list = data.content || [];
+    console.log(`\n--- SALDOS CLIENTES PARA ${nodeName} ---`);
+    console.log(`Muestra de Clientes: ${list.length}`);
+    if (list.length > 0) {
+        const withBalance = list.filter(c => (c.balance || 0) !== 0);
+        console.log(`Clientes con Saldo (!=0): ${withBalance.length}`);
+        if (withBalance.length > 0) console.log(`Ejemplo Saldo:`, JSON.stringify({ id: withBalance[0].id, name: withBalance[0].fullName, balance: withBalance[0].balance }, null, 2));
+    }
 }
 
 async function run() {
-    await countTypes('2378041', 'BIOSALUD', '2026-01-05');
-    await countTypes('2406943', 'CHACRAS', '2026-01-05');
+    const nodes = [
+        { id: '2378041', name: 'BIOSALUD' },
+        { id: '2406943', name: 'CHACRAS' }
+    ];
+    const dates = ['2026-01-20', '2026-01-25', '2025-12-15'];
+
+    for (const node of nodes) {
+        console.log(`\n=========================================`);
+        console.log(`AUDITING NODE: ${node.name} (${node.id})`);
+        console.log(`=========================================`);
+
+        await auditBalances(node.id, node.name);
+
+        for (const testDate of dates) {
+            console.log(`\n>>> Testing Date: ${testDate}`);
+            await countTypes(node.id, node.name, testDate);
+            await auditExpenses(node.id, node.name, testDate);
+            await auditInsurance(node.id, node.name, testDate);
+        }
+    }
 }
 
 run();

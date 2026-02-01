@@ -23,13 +23,17 @@ interface SyncMetadata {
     recordsProcessed: number;
 }
 
-export const LiveSellersLeaderboard: React.FC = () => {
+interface LiveSellersLeaderboardProps {
+    offlineData?: any[];
+}
+
+export const LiveSellersLeaderboard: React.FC<LiveSellersLeaderboardProps> = ({ offlineData }) => {
     const [liveSales, setLiveSales] = useState<LiveSale[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [syncing, setSyncing] = useState(false);
     const [filter, setFilter] = useState<'TODO' | 'BIOSALUD' | 'CHACRAS'>('TODO');
-    const [viewMode, setViewMode] = useState<'LIVE' | 'HISTORIC'>('LIVE');
+    const [viewMode, setViewMode] = useState<'LIVE' | 'HISTORIC' | 'OFFLINE'>('LIVE');
     const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
     const [syncMeta, setSyncMeta] = useState<SyncMetadata | null>(null);
 
@@ -45,6 +49,11 @@ export const LiveSellersLeaderboard: React.FC = () => {
     };
 
     useEffect(() => {
+        if (viewMode === 'OFFLINE') {
+            setLoading(false);
+            return;
+        }
+
         setLoading(true);
         let q;
 
@@ -72,7 +81,6 @@ export const LiveSellersLeaderboard: React.FC = () => {
                 const sales: LiveSale[] = [];
                 snapshot.forEach((doc) => {
                     const data = doc.data();
-                    // Filtramos en memoria para máxima compatibilidad
                     if (data.type === 'hourly_sale') {
                         sales.push(data as LiveSale);
                     }
@@ -96,64 +104,61 @@ export const LiveSellersLeaderboard: React.FC = () => {
         const unsubscribe = onSnapshot(metaRef, (snap) => {
             if (snap.exists()) {
                 const data = snap.data() as SyncMetadata;
-                console.log("📊 SYNC META DATA RECEIVED:", data);
                 setSyncMeta(data);
-            } else {
-                console.log("📊 SYNC META DOCUMENT DOES NOT EXIST YET");
             }
         });
         return () => unsubscribe();
     }, []);
 
-    const currentPeriodSales = useMemo(() => {
-        if (viewMode === 'LIVE') {
+    const leaderboard = useMemo(() => {
+        const stats: Record<string, { name: string; total: number; count: number; lastSale: string; branch: string }> = {};
+
+        let sourceSales: any[] = [];
+        if (viewMode === 'OFFLINE' && offlineData) {
+            sourceSales = offlineData.map(d => ({
+                seller: d.sellerName,
+                amount: d.totalAmount,
+                issueDate: d.date instanceof Date ? d.date.toISOString() : d.date,
+                branch: d.branch?.toUpperCase().includes('CHACRAS') ? 'CHACRAS' : 'BIOSALUD'
+            }));
+        } else if (viewMode === 'LIVE') {
             const today = new Date();
             const y = today.getFullYear();
             const m = String(today.getMonth() + 1).padStart(2, '0');
             const d = String(today.getDate()).padStart(2, '0');
             const todayStr = `${y}-${m}-${d}T00:00:00.000-0300`;
-            return liveSales.filter(s => s.issueDate >= todayStr);
+            sourceSales = liveSales.filter(s => s.issueDate >= todayStr);
+        } else {
+            sourceSales = liveSales;
         }
-        return liveSales; // En modo Historico la query ya viene filtrada por fecha
-    }, [liveSales, viewMode]);
 
-    const leaderboard = useMemo(() => {
-        const stats: Record<string, { name: string; total: number; count: number; lastSale: string; branch: string }> = {};
-
-        const filtered = currentPeriodSales.filter(sale => {
+        const filtered = sourceSales.filter(sale => {
             if (filter === 'TODO') return true;
             return sale.branch === filter;
         });
 
         filtered.forEach(sale => {
-            if (!stats[sale.seller]) {
-                stats[sale.seller] = { name: sale.seller, total: 0, count: 0, lastSale: sale.issueDate, branch: sale.branch };
+            const sellerKey = sale.seller || 'Desconocido';
+            if (!stats[sellerKey]) {
+                stats[sellerKey] = { name: sellerKey, total: 0, count: 0, lastSale: sale.issueDate, branch: sale.branch };
             }
             const amt = Number(sale.amount);
             if (!isNaN(amt)) {
-                stats[sale.seller].total += amt;
+                stats[sellerKey].total += amt;
             }
-            stats[sale.seller].count += 1;
-            if (new Date(sale.issueDate) > new Date(stats[sale.seller].lastSale)) {
-                stats[sale.seller].lastSale = sale.issueDate;
-                stats[sale.seller].branch = sale.branch;
+            stats[sellerKey].count += 1;
+            if (new Date(sale.issueDate) > new Date(stats[sellerKey].lastSale)) {
+                stats[sellerKey].lastSale = sale.issueDate;
+                stats[sellerKey].branch = sale.branch;
             }
         });
 
-        return Object.values(stats)
-            .sort((a, b) => b.total - a.total);
-    }, [currentPeriodSales, filter]);
+        return Object.values(stats).sort((a, b) => b.total - a.total);
+    }, [liveSales, viewMode, offlineData, filter]);
 
     const totalPeriodRevenue = useMemo(() => {
-        const filtered = currentPeriodSales.filter(sale => {
-            if (filter === 'TODO') return true;
-            return sale.branch === filter;
-        });
-        return filtered.reduce((acc, s) => {
-            const val = Number(s.amount);
-            return isNaN(val) ? acc : acc + val;
-        }, 0);
-    }, [currentPeriodSales, filter]);
+        return leaderboard.reduce((acc, s) => acc + s.total, 0);
+    }, [leaderboard]);
 
     if (loading) {
         return (
@@ -168,7 +173,8 @@ export const LiveSellersLeaderboard: React.FC = () => {
         );
     }
 
-    if (error) {
+    // Si hay error pero tenemos offlineData, podemos seguir operando en modo OFFLINE
+    if (error && viewMode !== 'OFFLINE') {
         return (
             <div className="bg-slate-900 rounded-3xl p-8 border border-red-500/30 text-center">
                 <div className="inline-flex items-center justify-center p-3 bg-red-500/10 rounded-2xl mb-4">
@@ -176,46 +182,19 @@ export const LiveSellersLeaderboard: React.FC = () => {
                 </div>
                 <h3 className="text-xl font-bold text-white mb-2">Error de Sincronización Real-Time</h3>
                 <p className="text-slate-500 max-w-md mx-auto mb-4">
-                    Parece que las reglas de tu base de datos (Firestore) no permiten leer la colección de ventas.
+                    Las reglas de Firestore bloquean el acceso vivo.
                 </p>
-                <div className="bg-slate-800 p-4 rounded-xl inline-block text-left mb-4">
-                    <p className="text-xs font-mono text-emerald-400">firebase deploy --only firestore:rules</p>
-                </div>
-                <p className="text-[10px] text-slate-600">Ejecuta el comando anterior en tu terminal o avisame para intentar arreglarlo.</p>
-            </div>
-        );
-    }
-
-    if (liveSales.length === 0) {
-        return (
-            <div className="bg-slate-900 rounded-3xl p-8 border border-slate-800 text-center relative overflow-hidden group">
-                <div className="absolute -inset-1 bg-gradient-to-r from-blue-600/10 via-purple-600/10 to-emerald-600/10 rounded-3xl blur opacity-50"></div>
-
-                <div className="relative">
-                    <div className="inline-flex items-center justify-center p-3 bg-slate-800 rounded-2xl mb-4">
-                        <Clock className="w-8 h-8 text-slate-500" />
-                    </div>
-                    <h3 className="text-xl font-bold text-white mb-2 uppercase tracking-tight">Monitor Zetti en Tiempo Real</h3>
-                    <p className="text-slate-500 max-w-md mx-auto mb-6">No se han detectado ventas hoy todavía. Sincronización automática activa cada hora.</p>
-
-                    <button
-                        onClick={handleManualSync}
-                        disabled={syncing}
-                        className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black transition-all active:scale-95 disabled:opacity-50 shadow-lg shadow-blue-500/20"
-                    >
-                        <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
-                        {syncing ? 'SINCRONIZANDO...' : 'FORZAR SINCRONIZACIÓN AHORA'}
+                {offlineData && offlineData.length > 0 && (
+                    <button onClick={() => setViewMode('OFFLINE')} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold">
+                        USAR DATOS CARGADOS (MODO CSV)
                     </button>
-
-                    <p className="text-[10px] text-slate-600 mt-4 font-bold uppercase tracking-widest">Zetti API v5 Cloud Tunneling</p>
-                </div>
+                )}
             </div>
         );
     }
 
     return (
         <div className="relative group">
-            {/* Background Glow */}
             <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 via-purple-600 to-emerald-600 rounded-3xl blur opacity-25 group-hover:opacity-40 transition duration-1000 group-hover:duration-200"></div>
 
             <div className="relative bg-slate-900 rounded-3xl p-6 border border-white/10 overflow-hidden">
@@ -232,35 +211,42 @@ export const LiveSellersLeaderboard: React.FC = () => {
                             <div className="flex items-center gap-3">
                                 <h2 className="text-xl font-black text-white tracking-tight uppercase">Ranking de Vendedores</h2>
                                 <div className="flex items-center gap-1.5 px-2 py-0.5 bg-emerald-500/20 rounded-full border border-emerald-500/30">
-                                    <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></div>
-                                    <span className="text-[10px] font-black text-emerald-400 uppercase tracking-wider">Live</span>
+                                    <div className={`w-1.5 h-1.5 rounded-full ${viewMode === 'OFFLINE' ? 'bg-blue-500' : 'bg-emerald-500 animate-pulse'}`}></div>
+                                    <span className="text-[10px] font-black text-emerald-400 uppercase tracking-wider">
+                                        {viewMode === 'OFFLINE' ? 'CSV DATA' : 'Live'}
+                                    </span>
                                 </div>
 
-                                {viewMode === 'LIVE' ? (
+                                <div className="flex items-center gap-1">
+                                    {offlineData && offlineData.length > 0 && (
+                                        <button
+                                            onClick={() => setViewMode('OFFLINE')}
+                                            className={`px-2.5 py-1 rounded-lg text-[9px] font-bold uppercase transition-all ${viewMode === 'OFFLINE' ? 'bg-blue-600 text-white' : 'bg-white/5 text-slate-400'}`}
+                                        >
+                                            CSV
+                                        </button>
+                                    )}
+                                    <button
+                                        onClick={() => setViewMode('LIVE')}
+                                        className={`px-2.5 py-1 rounded-lg text-[9px] font-bold uppercase transition-all ${viewMode === 'LIVE' ? 'bg-emerald-600 text-white' : 'bg-white/5 text-slate-400'}`}
+                                    >
+                                        Live
+                                    </button>
+                                </div>
+
+                                {viewMode !== 'OFFLINE' && (
                                     <button
                                         onClick={handleManualSync}
                                         disabled={syncing}
-                                        className={`flex items-center gap-1.5 px-2.5 py-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-all active:scale-95 disabled:opacity-50 group/sync`}
-                                        title="Sincronizar ahora con Zetti"
+                                        className="flex items-center gap-1.5 px-2.5 py-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-all"
                                     >
-                                        <RefreshCw className={`w-3 h-3 text-blue-400 ${syncing ? 'animate-spin' : 'group-hover/sync:rotate-180 transition-transform duration-500'}`} />
-                                        <span className="text-[9px] font-bold text-slate-300 uppercase tracking-tight">
-                                            {syncing ? 'Sincronizando...' : 'Sincronizar'}
-                                        </span>
-                                    </button>
-                                ) : (
-                                    <button
-                                        onClick={() => setViewMode('LIVE')}
-                                        className={`flex items-center gap-1.5 px-2.5 py-1 bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 rounded-lg transition-all active:scale-95 text-blue-400`}
-                                    >
-                                        <ArrowLeft className="w-3 h-3" />
-                                        <span className="text-[9px] font-bold uppercase tracking-tight">Volver al Vivo</span>
+                                        <RefreshCw className={`w-3 h-3 text-blue-400 ${syncing ? 'animate-spin' : ''}`} />
+                                        <span className="text-[9px] font-bold text-slate-300 uppercase tracking-tight">Sync</span>
                                     </button>
                                 )}
                             </div>
 
                             <div className="flex items-center gap-3 mt-3">
-                                {/* Branch Filter Tabs */}
                                 <div className="flex items-center gap-1 bg-white/5 p-1 rounded-xl border border-white/5 w-fit">
                                     {(['TODO', 'BIOSALUD', 'CHACRAS'] as const).map((b) => (
                                         <button
@@ -275,8 +261,6 @@ export const LiveSellersLeaderboard: React.FC = () => {
                                         </button>
                                     ))}
                                 </div>
-
-                                {/* Date Selector Tool */}
                                 <div className="flex items-center gap-2 bg-slate-800/50 p-1 rounded-xl border border-slate-700/50">
                                     <Calendar className="w-3.5 h-3.5 text-slate-500 ml-2" />
                                     <input
@@ -284,7 +268,7 @@ export const LiveSellersLeaderboard: React.FC = () => {
                                         value={selectedDate}
                                         onChange={(e) => {
                                             setSelectedDate(e.target.value);
-                                            if (viewMode === 'LIVE') setViewMode('HISTORIC');
+                                            if (viewMode !== 'OFFLINE') setViewMode('HISTORIC');
                                         }}
                                         className="bg-transparent text-[10px] font-bold text-slate-300 outline-none border-none py-1 pr-2 uppercase"
                                     />
@@ -295,7 +279,7 @@ export const LiveSellersLeaderboard: React.FC = () => {
 
                     <div className="bg-slate-800/50 px-4 py-2 rounded-2xl border border-slate-700/50 backdrop-blur-xl">
                         <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest text-right">
-                            {viewMode === 'LIVE' ? 'Venta Total Hoy' : `Venta ${format(new Date(selectedDate + 'T12:00:00'), 'dd/MM', { locale: es })}`}
+                            Venta Total {viewMode === 'OFFLINE' ? 'Cargada' : 'Hoy'}
                         </p>
                         <p className="text-xl font-black text-emerald-400 font-mono tracking-tighter">
                             {formatMoney(totalPeriodRevenue)}
@@ -313,14 +297,12 @@ export const LiveSellersLeaderboard: React.FC = () => {
                                 : 'bg-slate-800/30 border-slate-700/50 hover:border-slate-600'
                                 }`}
                         >
-                            {/* Position Badge */}
-                            <div className={`absolute -top-2 -right-2 w-6 h-6 rounded-lg flex items-center justify-center font-black text-[10px] shadow-lg transform rotate-12 group-hover:rotate-0 transition-transform ${idx === 0 ? 'bg-amber-500 text-amber-950' :
+                            <div className={`absolute -top-2 -right-2 w-6 h-6 rounded-lg flex items-center justify-center font-black text-[10px] shadow-lg transform rotate-12 ${idx === 0 ? 'bg-amber-500 text-amber-950' :
                                 idx === 1 ? 'bg-slate-300 text-slate-900' :
                                     idx === 2 ? 'bg-orange-400 text-orange-950' : 'bg-slate-700 text-white'
                                 }`}>
                                 {idx === 0 ? <Trophy className="w-3 h-3" /> : idx + 1}
                             </div>
-
                             <div className="flex items-center gap-3 mb-4">
                                 <div className={`p-2 rounded-xl ${idx === 0 ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-700/50 text-slate-400'}`}>
                                     <User className="w-5 h-5" />
@@ -329,74 +311,25 @@ export const LiveSellersLeaderboard: React.FC = () => {
                                     <p className="text-white font-black text-xs truncate uppercase tracking-tight">{seller.name}</p>
                                     <div className="flex items-center gap-1.5">
                                         <p className="text-[9px] text-slate-500 font-bold">{seller.count} tks</p>
-                                        <span className={`px-1 rounded-[4px] text-[8px] font-black uppercase tracking-tighter ${seller.branch === 'CHACRAS' ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'
-                                            }`}>
+                                        <span className={`px-1 rounded-[4px] text-[8px] font-black uppercase tracking-tighter ${seller.branch === 'CHACRAS' ? 'bg-purple-500/20 text-purple-400' : 'bg-blue-500/20 text-blue-400'}`}>
                                             {seller.branch}
                                         </span>
                                     </div>
                                 </div>
                             </div>
-
                             <div className="space-y-0.5">
                                 <p className="text-[8px] text-slate-500 font-black uppercase tracking-widest">Facturado</p>
-                                <p className={`text-base font-black font-mono leading-none ${idx === 0 ? 'text-amber-400' : 'text-slate-100'}`}>
+                                <p className={`text-sm font-black font-mono leading-none ${idx === 0 ? 'text-amber-400' : 'text-slate-100'}`}>
                                     {formatMoney(seller.total)}
                                 </p>
                             </div>
-
-                            {/* Activity Indicator */}
-                            {idx === 0 && (
-                                <div className="mt-4 flex items-center gap-1 text-amber-500/80">
-                                    <Flame className="w-3 h-3 animate-bounce" />
-                                    <span className="text-[8px] font-black uppercase">En racha</span>
-                                </div>
-                            )}
                         </div>
                     ))}
-                </div>
-
-                {/* Footer / Last Activity Feed */}
-                <div className="mt-8 pt-6 border-t border-slate-800/50 flex flex-col md:flex-row justify-between items-center gap-4">
-                    <div className="flex items-center gap-6">
-                        <div className="flex items-center gap-2">
-                            <Clock className="w-3.5 h-3.5 text-slate-500" />
-                            <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Últimas Ventas</span>
+                    {leaderboard.length === 0 && (
+                        <div className="col-span-full py-10 text-center text-slate-600 font-bold text-xs uppercase tracking-widest">
+                            No hay datos para mostrar en este modo.
                         </div>
-                        <div className="flex -space-x-2 overflow-hidden">
-                            {liveSales.slice(0, 5).map((sale, i) => (
-                                <div
-                                    key={i}
-                                    className="relative inline-block h-6 w-6 rounded-full ring-2 ring-slate-900 bg-slate-700 flex items-center justify-center"
-                                    title={`${sale.seller}: ${formatMoney(sale.amount)}`}
-                                >
-                                    <span className="text-[8px] font-black text-slate-300">{sale.seller[0]}</span>
-                                </div>
-                            ))}
-                        </div>
-                        <p className="text-[10px] text-slate-400 font-medium">
-                            <span className="font-bold text-slate-200">{liveSales[0].seller}</span> vendió hace {
-                                Math.floor((new Date().getTime() - new Date(liveSales[0].issueDate).getTime()) / 60000)
-                            } min
-                        </p>
-                    </div>
-
-                    <div className="flex flex-col items-end gap-0.5">
-                        <div className="flex items-center gap-1 text-[10px] text-slate-500 font-bold uppercase">
-                            <TrendingUp className="w-3 h-3 text-emerald-500" />
-                            <span>Zetti API v5</span>
-                        </div>
-                        {syncMeta?.lastSyncAt && (
-                            <div className="text-[9px] text-slate-600 font-mono">
-                                <span className={syncMeta.type === 'manual' ? 'text-amber-500' : 'text-emerald-500'}>
-                                    {syncMeta.type === 'manual' ? '⚡ FORZADO' : '🔄 AUTO'}
-                                </span>
-                                {' • '}
-                                {format(syncMeta.lastSyncAt.toDate(), "dd/MM HH:mm", { locale: es })}
-                                {' • '}
-                                <span className="text-slate-500">{syncMeta.recordsProcessed} reg</span>
-                            </div>
-                        )}
-                    </div>
+                    )}
                 </div>
             </div>
         </div>
