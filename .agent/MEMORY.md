@@ -95,5 +95,17 @@ La API de Zetti reside en un servidor HTTP (`http://190.15.199.103:8089`) y no s
 - Se implementó la visualización de "faltas" y productos sin código de barras en el módulo de auditoría.
 - Se optimizó el Dashboard para mostrar métricas clave de ventas de Enero.
 
+### 4. Cuentas Corrientes y Deuda (Febrero 2026)
+- **ID de Valor 22**: `CUENTA CORRIENTE` (CTACTE). Es la forma de pago principal para generar deuda.
+- **ID de Valor 21**: `CUOTA DE CUENTA CORRIENTE` (CCTACTE).
+- **ID del Cliente (Sheila Brahim)**: `134940000000000309`.
+- **Estado 'INGR' (ID 4)**: Significa "Ingresado" (pendiente de cobro).
+- **Hallazgo API**: Se intentó buscar deuda vía `sales-receipts/search` filtrando por `idValueType: 22`, pero el endpoint devuelve 0 resultados. Esto sugiere que las Facturas de Venta (ID 197) se registran inicialmente con su propio ID, y la "Cuenta Corriente" es un *valor de pago* relacionado que vive en otro endpoint de Tesorería aún no identificado positivamente en V2.
+- **Estado Actual**: Se pausó la investigación de la API para priorizar la vuelta a la **Carga por CSV** en el dashboard de Cuentas Corrientes.
+
+## Pendientes / Próximos Pasos
+1. **Reactivar Carga CSV en Cta Cte**: El componente `CurrentAccountDashboard.tsx` tenía la función oculta o incompleta. Se debe habilitar el botón de importación.
+2. **Endpoint de Valores**: Si se retoma la API, buscar un endpoint que acepte `ValueRequestDTO` o similar para listar "Valores de tipo 22" directamente.
+
 ---
-*Última actualización: 01 de Febrero, 2026*
+*Última actualización: 02 de Febrero, 2026*

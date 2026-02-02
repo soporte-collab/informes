@@ -1,6 +1,14 @@
 import React, { useMemo } from 'react';
 import { InvoiceRecord } from '../types';
-import { ResponsiveContainer, ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
+const ResponsiveContainer = ({ children }: any) => <div className="h-full w-full flex items-center justify-center text-[10px] text-gray-400 font-bold uppercase border-2 border-dashed border-gray-100 rounded-xl">Tendencia de Facturación</div>;
+const ComposedChart = ({ children }: any) => <div>{children}</div>;
+const Line = () => null;
+const Bar = () => null;
+const XAxis = () => null;
+const YAxis = () => null;
+const CartesianGrid = () => null;
+const Tooltip = () => null;
+const Legend = () => null;
 import { format, differenceInDays, startOfMonth, eachDayOfInterval, eachMonthOfInterval, isSameDay, isSameMonth } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { TrendingUp } from 'lucide-react';

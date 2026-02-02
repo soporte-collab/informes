@@ -1,0 +1,171 @@
+10:16:15[DEBUG] com.zetti.ftpos.impl.entidad.manager.EntidadManager. - findForSearchs(BRAHIM,null):class com.zetti.ftweb.gestion.entidad.cliente.modelo.Cliente; maxRows=80
+10:16:15[DEBUG] com.zetti.ftpos.domain.dao.impl.entidad.EntidadDAO. - initialize(Cliente,PersistentSet)
+10:16:15[DEBUG] com.zetti.ftpos.domain.dao.impl.entidad.EntidadDAO. - initialize(Cliente,PersistentSet)
+10:16:15[DEBUG] com.zetti.ftpos.domain.dao.impl.entidad.EntidadDAO. - initialize(Cliente,EntidadThin_$$_jvsta3c_5d)
+10:16:15[DEBUG] com.zetti.ftpos.impl.entidad.manager.NodoPorEntidadManager. - fillNodoPorEntidad([BRAHIM, SHEILA],BIOSALUD CHACRAS PARK)
+10:16:15[DEBUG] com.zetti.ftpos.domain.dao.impl.entidad.GenericNodoPorEntidadDAO. - isInitialized(HashSet)
+10:16:15[DEBUG] com.zetti.ftpos.domain.dao.impl.entidad.GenericNodoPorEntidadDAO. - isInitialized(HashSet)
+10:16:15[DEBUG] com.zetti.ftpos.domain.dao.impl.entidad.GenericNodoPorEntidadDAO. - isInitialized(LinkedHashSet)
+10:16:15[TRACE] com.zetti.ftpos.commons.search.cliente.ClienteSearchDialog. - Se seleccionó BRAHIM, SHEILA
+10:16:15[DEBUG] com.zetti.ftpos.impl.entidad.manager.NodoPorEntidadManager. - fillNodoPorEntidad([BRAHIM, SHEILA],BIOSALUD CHACRAS PARK)
+10:16:15[DEBUG] com.zetti.ftpos.domain.dao.impl.entidad.GenericNodoPorEntidadDAO. - isInitialized(LinkedHashSet)
+10:16:15[DEBUG] com.zetti.ftpos.domain.dao.impl.entidad.GenericNodoPorEntidadDAO. - isInitialized(LinkedHashSet)
+10:16:15[DEBUG] com.zetti.ftpos.domain.dao.impl.entidad.GenericNodoPorEntidadDAO. - isInitialized(LinkedHashSet)
+10:16:15[DEBUG] com.zetti.ftpos.impl.entidad.manager.NodoPorEntidadManager. - fillNodoPorEntidad([BRAHIM, SHEILA],BIOSALUD CHACRAS PARK)
+10:16:15[DEBUG] com.zetti.ftpos.domain.dao.impl.entidad.GenericNodoPorEntidadDAO. - isInitialized(LinkedHashSet)
+10:16:15[DEBUG] com.zetti.ftpos.domain.dao.impl.entidad.GenericNodoPorEntidadDAO. - isInitialized(LinkedHashSet)
+10:16:15[DEBUG] com.zetti.ftpos.domain.dao.impl.entidad.GenericNodoPorEntidadDAO. - isInitialized(LinkedHashSet)
+10:16:15[DEBUG] com.zetti.common.dao.impl.GenericDAOHibernateImpl. - find({direccion=[PASTEUR 290 piso: 2 dto: 8 (5501) - GODOY CRUZ - MENDOZA]}):GrupoDireccion; maxRows=0
+10:16:15[DEBUG] com.zetti.ftpos.impl.entidad.manager.EntidadManager. - getSaldoActual(Cliente,BIOSALUD CHACRAS PARK)
+10:16:15[DEBUG] com.zetti.ftpos.impl.parametro.manager.ParametroProvider. - Parámetro USA_TS_BRASIL no configurado. Tomando valor por defecto: false
+10:16:15[DEBUG] com.zetti.ftpos.domain.dao.impl.entidad.EntidadDAO. - findById(83172):Cliente; maxRows=80
+10:16:17[DEBUG] com.zetti.common.dao.impl.GenericDAOHibernateImpl. - find({nodoCreacion=BIOSALUD CHACRAS PARK, estado=[A, E, A], codigoMotorDeEventos=null, operacionValor.operacion.puestoVenta=ADMINISTRACION 02 - CE ELE CHACRAS 08},[Ljava.lang.String;@15cbf34b,[Z@3785772):FacturaElectronica; maxRows=0
+10:16:18[TRACE] com.zetti.ftpos.plugin.ventas.actions.CreateReceiptClientHandler. - Action CREATE_RECEIPT_CLIENT executed on Part com.zetti.ftpos.plugin.ventas.cliente.ventasclienteview
+10:16:18[DEBUG] com.zetti.ftpos.commons.actions.ActionProvider. - com.zetti.ftpos.plugin.ventas.cliente.VentasClienteView: Action CREATE_RECEIPT_CLIENT.execute
+10:16:18[TRACE] com.zetti.ftpos.commons.identify.IdentifyController. - Se autorizó al usuario LUCAS DICKSTEIN para realizar la acción PERMITEREALIZARRECIBO
+10:16:18[DEBUG] com.zetti.ftpos.commons.auditoria.AuditoriaEvent. - Se creó el evento AuditoriaEvent(source=com.zetti.ftpos.commons.auditoria.AuditoriaDatos@5e4632cb) Id = 37
+10:16:18[DEBUG] com.zetti.ftpos.commons.publisher.Publisher. - Se recibió evento AuditoriaEvent(source=com.zetti.ftpos.commons.auditoria.AuditoriaDatos@5e4632cb) Id = 37
+10:16:18[DEBUG] com.zetti.ftpos.plugin.ventas.cliente.event.ClienteReciboEvent. - Se creó el evento ClienteReciboEvent(source=BRAHIM, SHEILA) Id = 38
+10:16:18[DEBUG] com.zetti.ftpos.commons.publisher.Publisher. - Se recibió evento ClienteReciboEvent(source=BRAHIM, SHEILA) Id = 38
+10:16:18[INFO ] com.zetti.ftpos.commons.publisher.Publisher. - Procesando com.zetti.ftpos.commons.auditoria.AuditoriaEvent
+10:16:18[INFO ] com.zetti.ftpos.commons.publisher.Publisher. - Procesando sync:com.zetti.ftpos.plugin.ventas.cliente.event.ClienteReciboEvent
+10:16:18[DEBUG] com.zetti.ftpos.commons.publisher.Publisher. - com.zetti.ftpos.plugin.ventas.validaciononline.ValidacionOnlineController$3._preEvent(ClienteReciboEvent(source=BRAHIM, SHEILA) Id = 38)
+10:16:18[DEBUG] com.zetti.ftpos.commons.publisher.Publisher. - com.zetti.ftpos.plugin.ventas.operacion.OperacionController$8._preEvent(ClienteReciboEvent(source=BRAHIM, SHEILA) Id = 38)
+10:16:18[DEBUG] com.zetti.ftpos.commons.publisher.Publisher. - com.zetti.ftpos.plugin.ventas.operacion.OperacionController$19._preEvent(ClienteReciboEvent(source=BRAHIM, SHEILA) Id = 38)
+10:16:18[DEBUG] com.zetti.ftpos.commons.publisher.Publisher. - com.zetti.ftpos.plugin.ventas.itemvalor.ItemValorController$25._preEvent(ClienteReciboEvent(source=BRAHIM, SHEILA) Id = 38)
+10:16:18[DEBUG] com.zetti.ftpos.commons.publisher.Publisher. - com.zetti.ftpos.plugin.ventas.totales.TotalesController$15._preEvent(ClienteReciboEvent(source=BRAHIM, SHEILA) Id = 38)
+10:16:18[DEBUG] com.zetti.ftpos.commons.publisher.Publisher. - com.zetti.ftpos.plugin.ventas.convenio.ConvenioController$16._preEvent(ClienteReciboEvent(source=BRAHIM, SHEILA) Id = 38)
+10:16:18[DEBUG] com.zetti.ftpos.commons.publisher.Publisher. - com.zetti.ftpos.plugin.ventas.validaciononline.ValidacionOnlineController$3._runEvent(ClienteReciboEvent(source=BRAHIM, SHEILA) Id = 38)
+10:16:18[DEBUG] com.zetti.ftpos.commons.publisher.Publisher. - com.zetti.ftpos.plugin.ventas.operacion.OperacionController$8._runEvent(ClienteReciboEvent(source=BRAHIM, SHEILA) Id = 38)
+10:16:18[DEBUG] com.zetti.ftpos.plugin.ventas.operacion.OperacionController. - OperacionController.aplicarPercepcionIIBB(operacion)
+10:16:18[DEBUG] com.zetti.ftpos.impl.operaciones.tesoreria.pago.RetencionPercepcionManager. - RetencionPercepcionManager.aplicarPercepcionIIBB
+10:16:18[DEBUG] com.zetti.ftpos.commons.publisher.Publisher. - com.zetti.ftpos.plugin.ventas.operacion.OperacionController$19._runEvent(ClienteReciboEvent(source=BRAHIM, SHEILA) Id = 38)
+10:16:18[DEBUG] com.zetti.ftpos.impl.circuitoEstados.manager.CircuitoEstadoManager. - setearEstadosDestinoOperacion(PIR-POS INGRESAR RECIBO A CLIENTE POR COMPROBANTES)
+10:16:18[DEBUG] com.zetti.ftpos.impl.circuitoEstados.manager.CircuitoEstadoManager. - setearEstadoDestinoUnico(RECIBO A CLIENTE)
+10:16:18[DEBUG] com.zetti.ftpos.impl.conceptos.manager.ConceptoManager. - fillValoresConcepto(RECIBO A CLIENTE)
+10:16:18[DEBUG] com.zetti.ftpos.impl.conceptos.manager.ConceptoManager. - Calculando 1 conceptos para RECIBO A CLIENTE
+10:16:18[DEBUG] com.zetti.ftpos.domain.dao.impl.entidad.GenericEntidadDAO. - findThinById(134940000000000309)
+10:16:18[INFO ] com.zetti.ftpos.plugin.ventas.model.OperacionModel. - Se cambió la operación actual de PVF-POS VENTA CON FACTURA a PIR-POS INGRESAR RECIBO A CLIENTE POR COMPROBANTES
+10:16:18[DEBUG] com.zetti.ftpos.impl.parametro.manager.ParametroProvider. - Parámetro MODIFICAR_TEMPORAL: AGREGAR_ITEMS
+10:16:18[DEBUG] com.zetti.ftpos.domain.dao.impl.entidad.GenericEntidadDAO. - findThinById(141)
+10:16:18[DEBUG] com.zetti.ftpos.impl.conceptos.manager.ConceptoManager. - fillValoresConcepto(BILLETE)
+10:16:18[DEBUG] com.zetti.ftpos.impl.conceptos.manager.ConceptoManager. - Calculando 6 conceptos para BILLETE
+10:16:18[DEBUG] com.zetti.ftpos.impl.parametro.manager.ParametroProvider. - Parámetro CANTIDAD_COMPROBANTES: 80
+10:16:18[DEBUG] com.zetti.ftpos.impl.parametro.manager.ParametroProvider. - Parámetro CANTIDAD_COMPROBANTES: 80
+10:16:18[DEBUG] com.zetti.common.dao.impl.TipoBasicDAO. - findByIds([700, 257, 701, 471, 265, 488, 702, 473, 253, 254, 255, 256, 321, 626, 322, 184, 368, 370, 371, 563, 333, 369, 382, 565, 353, 489, 519, 269, 324, 326, 477, 328, 479, 266, 358, 364, 456, 515, 325, 327, 476, 329, 478, 267, 357, 362, 455],fechaCreacion,true):TipoOperacion; maxRows=0
+10:16:18[DEBUG] com.zetti.ftpos.impl.operacion.manager.OperacionValorManager. - find(BIOSALUD CHACRAS PARK, null, , null, CUENTA CORRIENTE, [INGRESADO], null, BRAHIM, SHEILA, null, null, [VENTA CON TICKET, VENTA CON TICKET CON ENVIO A DOMICILIO, VENTA CON FACTURA, VENTA CON FACTURA MIPYME, VENTA CON FACTURA CON ENVIO A DOMICILIO, VENTA CON FACTURA MIPYME CON ENVIO A DOMICILIO, NOTA DE CREDITO, NOTA DE CREDITO MIPYME, EMITIR PRESUPUESTO, EMITIR REMITO, EMITIR TRANSFERENCIA A SUCURSAL, EMITIR VALE, ENTREGAR VALE, RETIRAR VALE, EMITIR EVENTO, INGRESAR RECIBO A CLIENTE, EMITIR ENCARGO DE CLIENTE, EMITIR ENCARGO INTERNO, EMITIR ENCARGO POR DEMANDA NO SATISFECHA, EMITIR PRESUPUESTO LICITACION, ANULACION DE TRANSFERENCIA, EMITIR ANULACION DE ENCARGO DE CLIENTE, ANULACION DE ENCARGO INTERNO, INGRESAR RECIBO A CLIENTE POR COMPROBANTES, NOTA DE CREDITO CON ENVIO A DOMICILIO, NOTA DE CREDITO MIPYME CON ENVIO A DOMICILIO, GENERAR CANASTO, VENDA COM NOTA MANUAL, VENTA CON TICKET TEMPORAL, VENTA CON FACTURA TEMPORAL, VENTA CON FACTURA MIPYME TEMPORAL, NOTA DE CREDITO TEMPORAL, NOTA DE CREDITO MIPYME TEMPORAL, EMITIR VALE TEMPORAL, EMITIR TRANSFERENCIA TEMPORAL, ANULACION DE TRANSFERENCIA TEMPORAL, EMITIR PRESUPUESTO TEMPORAL, EMITIR REMITO TEMPORAL, VENTA CON TICKET PENDIENTE, VENTA CON FACTURA PENDIENTE, VENTA CON FACTURA MIPYME PENDIENTE, NOTA DE CREDITO PENDIENTE, NOTA DE CREDITO MIPYME PENDIENTE, EMITIR VALE PENDIENTE, EMITIR TRANSFERENCIA PENDIENTE, ANULACION DE TRANSFERENCIA PENDIENTE, EMITIR PRESUPUESTO PENDIENTE], null, null)
+10:16:18[DEBUG] com.zetti.ftpos.valores.formaPago.modelo.CuentaCorriente. - Cambió el monto principal del Valor CuentaCorriente FV B0008-00012338 de 0 a 11487.00000
+10:16:18[DEBUG] com.zetti.ftpos.valores.comprobante.modelo.FacturaVenta. - Cambió el monto principal del Valor FacturaVenta 0008-00012338 de 0 a 11487.00000
+10:16:18[DEBUG] com.zetti.ftpos.valores.formaPago.modelo.CuentaCorriente. - Cambió el monto principal del Valor CuentaCorriente FV B0008-00012334 de 0 a 10681.76000
+10:16:18[DEBUG] com.zetti.ftpos.valores.comprobante.modelo.FacturaVenta. - Cambió el monto principal del Valor FacturaVenta 0008-00012334 de 0 a 24033.96000
+10:16:18[DEBUG] com.zetti.ftpos.valores.formaPago.modelo.CuentaCorriente. - Cambió el monto principal del Valor CuentaCorriente FV B0008-00011686 de 0 a 7280.00000
+10:16:18[DEBUG] com.zetti.ftpos.valores.comprobante.modelo.FacturaVenta. - Cambió el monto principal del Valor FacturaVenta 0008-00011686 de 0 a 7280.00000
+10:16:18[DEBUG] com.zetti.ftpos.valores.formaPago.modelo.CuentaCorriente. - Cambió el monto principal del Valor CuentaCorriente FV B0008-00011665 de 0 a 742.00000
+10:16:18[DEBUG] com.zetti.ftpos.valores.comprobante.modelo.FacturaVenta. - Cambió el monto principal del Valor FacturaVenta 0008-00011665 de 0 a 742.00000
+10:16:18[DEBUG] com.zetti.ftpos.valores.formaPago.modelo.CuentaCorriente. - Cambió el monto principal del Valor CuentaCorriente FV B0008-00011652 de 0 a 12109.90000
+10:16:18[DEBUG] com.zetti.ftpos.valores.comprobante.modelo.FacturaVenta. - Cambió el monto principal del Valor FacturaVenta 0008-00011652 de 0 a 12109.90000
+10:16:18[DEBUG] com.zetti.ftpos.valores.formaPago.modelo.CuentaCorriente. - Cambió el monto principal del Valor CuentaCorriente FV B0008-00011645 de 0 a 52759.00000
+10:16:18[DEBUG] com.zetti.ftpos.valores.comprobante.modelo.FacturaVenta. - Cambió el monto principal del Valor FacturaVenta 0008-00011645 de 0 a 52759.00000
+10:16:18[DEBUG] com.zetti.ftpos.valores.formaPago.modelo.CuentaCorriente. - Cambió el monto principal del Valor CuentaCorriente FV B0008-00011377 de 0 a 28721.00000
+10:16:18[DEBUG] com.zetti.ftpos.valores.comprobante.modelo.FacturaVenta. - Cambió el monto principal del Valor FacturaVenta 0008-00011377 de 0 a 28721.00000
+OK
+10:16:18[DEBUG] com.zetti.ftpos.plugin.ventas.search.valor.ReciboComprobantesDialog. - create()
+10:16:18[DEBUG] com.zetti.ftpos.plugin.ventas.search.valor.ReciboComprobantesDialog. - create()
+10:16:18[DEBUG] com.zetti.ftpos.grid.GridAnnotatedBuilder. - Build grid with Row class: com.zetti.ftpos.plugin.ventas.search.valor.ReciboComprobanteSearchGridRow
+10:16:18[DEBUG] com.zetti.ftpos.grid.GridAnnotatedBuilder. - Build grid with Row class: com.zetti.ftpos.plugin.ventas.search.valor.ReciboSumaComprobantesGridRow
+10:16:18[DEBUG] com.zetti.ftpos.grid.GridAnnotatedBuilder. - Build grid with Row class: com.zetti.ftpos.commons.search.valor.ComprobanteItemGridRow
+10:16:18[DEBUG] com.zetti.ftpos.grid.GridAnnotatedBuilder. - Build grid with Row class: com.zetti.ftpos.commons.search.valor.ComprobanteOpValorGridRow
+10:16:18[DEBUG] com.zetti.ftpos.plugin.ventas.search.valor.ReciboComprobantesDialog. - prepareButtonColors: Doing nothing by default. Please override!
+10:16:18[DEBUG] com.zetti.ftpos.grid.GridAnnotatedBuilder. - addGridRows(rows.size()=,0, isSetGridRows=true)
+10:16:18[DEBUG] com.zetti.ftpos.grid.GridAnnotatedBuilder. - 0 rows added: com.zetti.ftpos.plugin.ventas.search.valor.ReciboComprobanteSearchGridRow
+10:16:18[DEBUG] com.zetti.ftpos.plugin.ventas.search.valor.ReciboComprobanteAsyncProvider. - startLoadingGrid...
+10:16:18[DEBUG] com.zetti.ftpos.grid.GridAnnotatedBuilder. - addGridRows(rows.size()=,7, isSetGridRows=false)
+10:16:18[DEBUG] com.zetti.ftpos.commons.notifier.NotifierDialog. - Using ActiveWorkbench display
+10:16:18[INFO ] com.zetti.ftpos.commons.notifier.NotifierDialog. - Búsqueda: Se encontraron 7 comprobantes
+10:16:18[DEBUG] com.zetti.ftpos.grid.GridAnnotatedBuilder. - forceFocus(): ReciboComprobanteSearchGridRow
+10:16:18[DEBUG] com.zetti.ftpos.impl.operacion.manager.OperacionValorManager. - find([[VENTA CON FACTURA]])
+10:16:18[DEBUG] com.zetti.ftpos.valores.comprobante.modelo.FacturaVenta. - Cambió el monto principal del Valor FacturaVenta 0008-00012338 de 0 a 11487.00000
+10:16:18[DEBUG] com.zetti.ftpos.valores.formaPago.modelo.CuentaCorriente. - Cambió el monto principal del Valor CuentaCorriente FV B0008-00012338 de 0 a 11487.00000
+10:16:18[DEBUG] com.zetti.ftpos.impl.valor.manager.ValorManager. - fillItemsValor(Valor X 1)
+10:16:18[DEBUG] com.zetti.ftpos.valor.dao.impl.ItemValorDAO. - find({valor.id=[144680000000059281]},id,true):ItemValor; maxRows=0
+10:16:18[DEBUG] com.zetti.ftpos.valores.formaPago.modelo.CuentaCorriente. - Cambió el monto principal del Valor CuentaCorriente FV B0008-00012338 de 0 a 11487.00000
+10:16:18[DEBUG] com.zetti.ftpos.valores.comprobante.modelo.FacturaVenta. - Cambió el monto principal del Valor FacturaVenta 0008-00012338 de 0 a 11487.00000
+10:16:18[DEBUG] com.zetti.ftpos.grid.GridAnnotatedBuilder. - addGridRows(rows.size()=,0, isSetGridRows=true)
+10:16:18[DEBUG] com.zetti.ftpos.grid.GridAnnotatedBuilder. - 0 rows added: com.zetti.ftpos.plugin.ventas.search.valor.ReciboSumaComprobantesGridRow
+10:16:18[DEBUG] com.zetti.ftpos.grid.GridAnnotatedBuilder. - selectCell(columnIndex=,0,rowIndex=0,callback,fireSelectionEvent=false)
+10:16:18[DEBUG] com.zetti.ftpos.plugin.ventas.search.valor.ReciboComprobanteAsyncProvider. - startLoadingGrid DONE
+10:16:18[DEBUG] com.zetti.ftpos.grid.GridAnnotatedBuilder. - selectCell(columnIndex=,0,rowIndex=0,null,fireSelectionEvent=false)
+10:16:18[DEBUG] com.zetti.ftpos.impl.operacion.manager.OperacionValorManager. - find([[VENTA CON FACTURA], [VENTA CON FACTURA], [VENTA CON FACTURA], [VENTA CON FACTURA], [VENTA CON FACTURA], [VENTA CON FACTURA]])
+10:16:18[DEBUG] com.zetti.ftpos.valores.comprobante.modelo.FacturaVenta. - Cambió el monto principal del Valor FacturaVenta 0008-00011377 de 0 a 28721.00000
+10:16:18[DEBUG] com.zetti.ftpos.valores.formaPago.modelo.CuentaCorriente. - Cambió el monto principal del Valor CuentaCorriente FV B0008-00011377 de 0 a 28721.00000
+10:16:18[DEBUG] com.zetti.ftpos.valores.comprobante.modelo.FacturaVenta. - Cambió el monto principal del Valor FacturaVenta 0008-00011645 de 0 a 52759.00000
+10:16:18[DEBUG] com.zetti.ftpos.valores.formaPago.modelo.CuentaCorriente. - Cambió el monto principal del Valor CuentaCorriente FV B0008-00011645 de 0 a 52759.00000
+10:16:18[DEBUG] com.zetti.ftpos.valores.comprobante.modelo.FacturaVenta. - Cambió el monto principal del Valor FacturaVenta 0008-00011652 de 0 a 12109.90000
+10:16:18[DEBUG] com.zetti.ftpos.valores.formaPago.modelo.CuentaCorriente. - Cambió el monto principal del Valor CuentaCorriente FV B0008-00011652 de 0 a 12109.90000
+10:16:18[DEBUG] com.zetti.ftpos.valores.comprobante.modelo.FacturaVenta. - Cambió el monto principal del Valor FacturaVenta 0008-00011665 de 0 a 742.00000
+10:16:18[DEBUG] com.zetti.ftpos.valores.formaPago.modelo.CuentaCorriente. - Cambió el monto principal del Valor CuentaCorriente FV B0008-00011665 de 0 a 742.00000
+10:16:18[DEBUG] com.zetti.ftpos.valores.comprobante.modelo.FacturaVenta. - Cambió el monto principal del Valor FacturaVenta 0008-00011686 de 0 a 7280.00000
+10:16:18[DEBUG] com.zetti.ftpos.valores.formaPago.modelo.CuentaCorriente. - Cambió el monto principal del Valor CuentaCorriente FV B0008-00011686 de 0 a 7280.00000
+10:16:18[DEBUG] com.zetti.ftpos.valores.comprobante.modelo.FacturaVenta. - Cambió el monto principal del Valor FacturaVenta 0008-00012334 de 0 a 24033.96000
+10:16:18[DEBUG] com.zetti.ftpos.valores.formaPago.modelo.CuentaCorriente. - Cambió el monto principal del Valor CuentaCorriente FV B0008-00012334 de 0 a 10681.76000
+10:16:18[DEBUG] com.zetti.ftpos.valores.receta.modelo.Receta. - Cambió el monto principal del Valor Receta 5050100141385575 de 0 a 13352.20000
+10:16:18[DEBUG] com.zetti.ftpos.impl.valor.manager.ValorManager. - fillItemsValor(Valor X 6)
+10:16:18[DEBUG] com.zetti.ftpos.valor.dao.impl.ItemValorDAO. - find({valor.id=[144680000000055848, 144680000000055838, 144680000000055744, 144680000000055686, 144680000000055645, 144680000000054377]},id,true):ItemValor; maxRows=0
+10:16:18[DEBUG] com.zetti.ftpos.valores.formaPago.modelo.CuentaCorriente. - Cambió el monto principal del Valor CuentaCorriente FV B0008-00011377 de 0 a 28721.00000
+10:16:18[DEBUG] com.zetti.ftpos.valores.comprobante.modelo.FacturaVenta. - Cambió el monto principal del Valor FacturaVenta 0008-00011377 de 0 a 28721.00000
+10:16:18[DEBUG] com.zetti.ftpos.valores.formaPago.modelo.CuentaCorriente. - Cambió el monto principal del Valor CuentaCorriente FV B0008-00011645 de 0 a 52759.00000
+10:16:18[DEBUG] com.zetti.ftpos.valores.comprobante.modelo.FacturaVenta. - Cambió el monto principal del Valor FacturaVenta 0008-00011645 de 0 a 52759.00000
+10:16:18[DEBUG] com.zetti.ftpos.valores.formaPago.modelo.CuentaCorriente. - Cambió el monto principal del Valor CuentaCorriente FV B0008-00011652 de 0 a 12109.90000
+10:16:18[DEBUG] com.zetti.ftpos.valores.comprobante.modelo.FacturaVenta. - Cambió el monto principal del Valor FacturaVenta 0008-00011652 de 0 a 12109.90000
+10:16:18[DEBUG] com.zetti.ftpos.valores.formaPago.modelo.CuentaCorriente. - Cambió el monto principal del Valor CuentaCorriente FV B0008-00011665 de 0 a 742.00000
+10:16:18[DEBUG] com.zetti.ftpos.valores.comprobante.modelo.FacturaVenta. - Cambió el monto principal del Valor FacturaVenta 0008-00011665 de 0 a 742.00000
+10:16:18[DEBUG] com.zetti.ftpos.valores.formaPago.modelo.CuentaCorriente. - Cambió el monto principal del Valor CuentaCorriente FV B0008-00011686 de 0 a 7280.00000
+10:16:18[DEBUG] com.zetti.ftpos.valores.comprobante.modelo.FacturaVenta. - Cambió el monto principal del Valor FacturaVenta 0008-00011686 de 0 a 7280.00000
+10:16:18[DEBUG] com.zetti.ftpos.valores.formaPago.modelo.CuentaCorriente. - Cambió el monto principal del Valor CuentaCorriente FV B0008-00012334 de 0 a 10681.76000
+10:16:18[DEBUG] com.zetti.ftpos.valores.comprobante.modelo.FacturaVenta. - Cambió el monto principal del Valor FacturaVenta 0008-00012334 de 0 a 24033.96000
+10:16:18[DEBUG] com.zetti.ftpos.grid.GridAnnotatedBuilder. - addGridRows(rows.size()=,0, isSetGridRows=true)
+10:16:18[DEBUG] com.zetti.ftpos.grid.GridAnnotatedBuilder. - 0 rows added: com.zetti.ftpos.plugin.ventas.search.valor.ReciboSumaComprobantesGridRow
+10:16:19[DEBUG] com.zetti.ftpos.grid.GridAnnotatedBuilder. - natTable.forceFocus(): ReciboComprobanteSearchGridRow
+10:16:19[DEBUG] com.zetti.ftpos.grid.GridAnnotatedBuilder. - forceFocus(): ReciboComprobanteSearchGridRow
+10:16:19[DEBUG] com.zetti.ftpos.grid.GridAnnotatedBuilder. - natTable.forceFocus(): ReciboComprobanteSearchGridRow
+10:16:20[DEBUG] com.zetti.common.dao.impl.GenericDAOHibernateImpl. - find({nodoCreacion=BIOSALUD CHACRAS PARK, estado=[A, E, A], codigoMotorDeEventos=null, operacionValor.operacion.puestoVenta=ADMINISTRACION 02 - CE ELE CHACRAS 08},[Ljava.lang.String;@7ef3c262,[Z@76097d6a):FacturaElectronica; maxRows=0
+10:16:23[DEBUG] com.zetti.common.dao.impl.GenericDAOHibernateImpl. - find({nodoCreacion=BIOSALUD CHACRAS PARK, estado=[A, E, A], codigoMotorDeEventos=null, operacionValor.operacion.puestoVenta=ADMINISTRACION 02 - CE ELE CHACRAS 08},[Ljava.lang.String;@7e0fd23,[Z@6ed236e6):FacturaElectronica; maxRows=0
+10:16:26[DEBUG] com.zetti.common.dao.impl.GenericDAOHibernateImpl. - find({nodoCreacion=BIOSALUD CHACRAS PARK, estado=[A, E, A], codigoMotorDeEventos=null, operacionValor.operacion.puestoVenta=ADMINISTRACION 02 - CE ELE CHACRAS 08},[Ljava.lang.String;@6984ad62,[Z@60944d2a):FacturaElectronica; maxRows=0
+10:16:29[DEBUG] com.zetti.common.dao.impl.GenericDAOHibernateImpl. - find({nodoCreacion=BIOSALUD CHACRAS PARK, estado=[A, E, A], codigoMotorDeEventos=null, operacionValor.operacion.puestoVenta=ADMINISTRACION 02 - CE ELE CHACRAS 08},[Ljava.lang.String;@61c05f4b,[Z@13a8928f):FacturaElectronica; maxRows=0
+10:16:30[WARN ] com.zetti.ftpos.plugin.ventas.search.valor.ReciboComprobanteAsyncProvider. - Búsqueda interrumpida!
+10:16:32[DEBUG] com.zetti.common.dao.impl.GenericDAOHibernateImpl. - find({nodoCreacion=BIOSALUD CHACRAS PARK, estado=[A, E, A], codigoMotorDeEventos=null, operacionValor.operacion.puestoVenta=ADMINISTRACION 02 - CE ELE CHACRAS 08},[Ljava.lang.String;@2a3e6079,[Z@70cdf82b):FacturaElectronica; maxRows=0
+10:16:32[TRACE] com.zetti.ftpos.commons.dialog.OptionDialog. - PREGUNTA Cliente configurado con Recibo por Comprobantes - ¿Desea realizar un Recibo sin Comprobantes?: NO
+10:16:32[DEBUG] com.zetti.ftpos.plugin.ventas.operacion.event.OperacionReset. - Se creó el evento OperacionReset Id = 39
+10:16:32[DEBUG] com.zetti.ftpos.commons.publisher.Publisher. - Se recibió evento OperacionReset Id = 39 forced
+10:16:32[DEBUG] com.zetti.ftpos.commons.publisher.Publisher. - com.zetti.ftpos.plugin.ventas.itemvalor.ItemValorController$25._runEvent(ClienteReciboEvent(source=BRAHIM, SHEILA) Id = 38)
+10:16:32[INFO ] com.zetti.ftpos.commons.publisher.Publisher. - Procesando com.zetti.ftpos.plugin.ventas.operacion.event.OperacionReset
+10:16:32[DEBUG] com.zetti.ftpos.commons.publisher.Publisher. - com.zetti.ftpos.plugin.ventas.totales.TotalesController$15._runEvent(ClienteReciboEvent(source=BRAHIM, SHEILA) Id = 38)
+10:16:32[DEBUG] com.zetti.ftpos.commons.publisher.Publisher. - com.zetti.ftpos.plugin.ventas.convenio.ConvenioController$16._runEvent(ClienteReciboEvent(source=BRAHIM, SHEILA) Id = 38)
+10:16:32[DEBUG] com.zetti.ftpos.commons.publisher.Publisher. - com.zetti.ftpos.plugin.ventas.validaciononline.ValidacionOnlineController$3._preEvent(OperacionReset Id = 39 forced)
+10:16:32[DEBUG] com.zetti.ftpos.commons.publisher.Publisher. - com.zetti.ftpos.plugin.ventas.operacion.OperacionController$4._preEvent(OperacionReset Id = 39 forced)
+10:16:32[DEBUG] com.zetti.ftpos.commons.publisher.Publisher. - com.zetti.ftpos.plugin.ventas.operacion.OperacionController$8._preEvent(OperacionReset Id = 39 forced)
+10:16:32[DEBUG] com.zetti.ftpos.commons.publisher.Publisher. - com.zetti.ftpos.plugin.ventas.itemvalor.ItemValorController$12._preEvent(OperacionReset Id = 39 forced)
+10:16:32[DEBUG] com.zetti.ftpos.commons.publisher.Publisher. - com.zetti.ftpos.plugin.ventas.itemvalor.ItemValorController$25._preEvent(OperacionReset Id = 39 forced)
+10:16:32[DEBUG] com.zetti.ftpos.commons.publisher.Publisher. - com.zetti.ftpos.plugin.ventas.totales.TotalesController$1._preEvent(OperacionReset Id = 39 forced)
+10:16:32[DEBUG] com.zetti.ftpos.commons.publisher.Publisher. - com.zetti.ftpos.plugin.ventas.totales.TotalesController$15._preEvent(OperacionReset Id = 39 forced)
+10:16:32[DEBUG] com.zetti.ftpos.commons.publisher.Publisher. - com.zetti.ftpos.plugin.ventas.convenio.ConvenioController$16._preEvent(OperacionReset Id = 39 forced)
+10:16:32[DEBUG] com.zetti.ftpos.commons.publisher.Publisher. - com.zetti.ftpos.plugin.ventas.prototipo.PrototipoVentasController$4._preEvent(OperacionReset Id = 39 forced)
+10:16:32[DEBUG] com.zetti.ftpos.commons.publisher.Publisher. - com.zetti.ftpos.plugin.ventas.cliente.ClienteController$5._preEvent(OperacionReset Id = 39 forced)
+10:16:32[DEBUG] com.zetti.ftpos.commons.publisher.Publisher. - com.zetti.ftpos.plugin.ventas.producto.ProductoController$4._preEvent(OperacionReset Id = 39 forced)
+10:16:32[DEBUG] com.zetti.ftpos.commons.publisher.Publisher. - com.zetti.ftpos.plugin.ventas.video.VentasVideoController$6._preEvent(OperacionReset Id = 39 forced)
+10:16:32[DEBUG] com.zetti.ftpos.commons.publisher.Publisher. - com.zetti.ftpos.plugin.ventas.problem.ProblemController$3._preEvent(OperacionReset Id = 39 forced)
+10:16:32[DEBUG] com.zetti.ftpos.commons.publisher.Publisher. - com.zetti.ftpos.plugin.ventas.validaciononline.ValidacionOnlineController$3._runEvent(OperacionReset Id = 39 forced)
+10:16:32[DEBUG] com.zetti.ftpos.commons.publisher.Publisher. - com.zetti.ftpos.plugin.ventas.operacion.OperacionController$4._runEvent(OperacionReset Id = 39 forced)
+10:16:32[TRACE] com.zetti.ftpos.app.manager.FTPosLocalSession. - Se autenticó el usuario LDICKSTEIN.
+10:16:32[DEBUG] com.zetti.ftpos.impl.circuitoEstados.manager.CircuitoEstadoManager. - setearEstadosDestinoOperacion(PVF-POS VENTA CON FACTURA)
+10:16:32[DEBUG] com.zetti.ftpos.impl.circuitoEstados.manager.CircuitoEstadoManager. - setearEstadoDestinoUnico(FACTURA DE VENTA)
+10:16:32[DEBUG] com.zetti.ftpos.impl.conceptos.manager.ConceptoManager. - fillValoresConcepto(FACTURA DE VENTA)
+10:16:32[DEBUG] com.zetti.ftpos.impl.conceptos.manager.ConceptoManager. - Calculando 99 conceptos para FACTURA DE VENTA
+10:16:32[WARN ] com.zetti.ftpos.impl.conceptos.manager.ConceptoManager. - Error de cálculo del Concepto PERCEPCION IB TOTAL[FACTURA DE VENTA-PERCEPCION IB TOTAL] para el Valor: FACTURA DE VENTA. Script: importePercepcionIIBB. No value for xpath: importePercepcionIIBB
+10:16:32[WARN ] com.zetti.ftpos.impl.conceptos.manager.ConceptoManager. - Error de cálculo del Concepto PERCEPCION IVA TOTAL[FACTURA DE VENTA-PERCEPCION IVA TOTAL] para el Valor: FACTURA DE VENTA. Script: importePercepcionIVA. No value for xpath: importePercepcionIVA
+10:16:32[WARN ] com.zetti.ftpos.impl.conceptos.manager.ConceptoManager. - Error de cálculo del Concepto ALICUOTA DE PERCEPCION IIBB[FACTURA DE VENTA-ALICUOTA DE PERCEPCION IIBB] para el Valor: FACTURA DE VENTA. Script: alicuotaIIBB. No value for xpath: alicuotaIIBB
+10:16:32[DEBUG] com.zetti.ftpos.impl.parametro.manager.ParametroProvider. - Parámetro MODIFICAR_TEMPORAL: AGREGAR_ITEMS
+10:16:32[DEBUG] com.zetti.ftpos.impl.parametro.manager.ParametroProvider. - Parámetro MODIFICAR_TEMPORAL: AGREGAR_ITEMS
+10:16:32[DEBUG] com.zetti.ftpos.domain.dao.impl.entidad.GenericEntidadDAO. - findThinById(141)
+10:16:32[DEBUG] com.zetti.ftpos.impl.conceptos.manager.ConceptoManager. - fillValoresConcepto(BILLETE)
+10:16:32[DEBUG] com.zetti.ftpos.impl.conceptos.manager.ConceptoManager. - Calculando 6 conceptos para BILLETE

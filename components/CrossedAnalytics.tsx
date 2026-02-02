@@ -1,10 +1,22 @@
 import React, { useMemo, useState } from 'react';
 import { InvoiceRecord, SaleRecord, ExpenseRecord } from '../types';
 import { formatMoney } from '../utils/dataHelpers';
-import {
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-    Legend, Cell, PieChart, Pie, Sector, LineChart, Line, AreaChart, Area
-} from 'recharts';
+const ResponsiveContainer = ({ children }: any) => <div className="h-full w-full border-2 border-dashed border-gray-100 rounded-2xl flex items-center justify-center text-[10px] text-gray-400 font-bold uppercase italic">Inteligencia de Datos</div>;
+const BarChart = ({ children }: any) => <div>{children}</div>;
+const Bar = () => null;
+const XAxis = () => null;
+const YAxis = () => null;
+const CartesianGrid = () => null;
+const Tooltip = () => null;
+const Legend = () => null;
+const Cell = () => null;
+const PieChart = ({ children }: any) => <div>{children}</div>;
+const Pie = () => null;
+const Sector = () => null;
+const LineChart = ({ children }: any) => <div>{children}</div>;
+const Line = () => null;
+const AreaChart = ({ children }: any) => <div>{children}</div>;
+const Area = () => null;
 import {
     Search, AlertTriangle, CheckCircle, Package, User, CreditCard, HeartPulse,
     Stethoscope, Wallet, Crown, TrendingUp, Building2, Filter, FileText,

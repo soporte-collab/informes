@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import Papa from 'papaparse';
-import { processInvoiceData, processExpenseData, processServiceData } from './utils/dataHelpers';
+import { processInvoiceData, processExpenseData, processServiceData, processCurrentAccountData } from './utils/dataHelpers';
 import { SaleRecord, InvoiceRecord, ExpenseRecord, CurrentAccountRecord, StockRecord, InsuranceRecord, UnifiedTransaction } from './types';
 import { Dashboard } from './components/Dashboard';
 import { InvoiceDashboard } from './components/InvoiceDashboard';
@@ -11,20 +11,27 @@ import { SellerDetail } from './components/SellerDetail';
 import { CrossedAnalytics } from './components/CrossedAnalytics';
 import { ZettiSync } from './components/ZettiSync';
 import { Login } from './components/Login';
+import { InsuranceDashboard } from './components/InsuranceDashboard';
 import { PrintReport } from './components/PrintReport';
 import { ShoppingAssistant } from './components/ShoppingAssistant';
 import { MixMaestroDashboard } from './components/MixMaestroDashboard';
 import { SellersDashboard } from './components/SellersDashboard';
-import { Activity, LogOut, Trash2, HardDrive, BarChart3, FileText, Radar, Upload, RefreshCw, ShoppingCart, Wallet, Lightbulb, CloudLightning, Blend, LayoutDashboard, Package, Users, Truck, Calendar, Menu, Printer } from 'lucide-react';
+import { PayrollDashboard } from './components/PayrollDashboard';
+import { LiveDashboard } from './components/LiveDashboard';
+import { Activity, LogOut, Trash2, HardDrive, BarChart3, FileText, Radar, Upload, RefreshCw, ShoppingCart, Wallet, Lightbulb, CloudLightning, Blend, LayoutDashboard, Package, Users, Truck, Calendar, Menu, Printer, Banknote, ShieldCheck } from 'lucide-react';
 import {
     getAllSalesFromDB, saveSalesToDB, clearDB, saveInvoicesToDB, getAllInvoicesFromDB,
     getAllExpensesFromDB, saveExpensesToDB, getAllCurrentAccountsFromDB, saveCurrentAccountsToDB,
     saveStockToDB, getAllStockFromDB, saveInsuranceToDB, getAllInsuranceFromDB,
-    getAllServicesFromDB, saveServicesToDB, getAllUnifiedFromDB, saveUnifiedToDB
+    getAllServicesFromDB, saveServicesToDB, getAllUnifiedFromDB, saveUnifiedToDB,
+    getAllPayrollFromDB,
+    clearCurrentAccountsDB, clearExpensesDB, clearSalesDB, clearInvoicesDB, clearStockDB, clearInsuranceDB, clearServicesDB,
+    getMetadata, saveMetadata
 } from './utils/db';
 import * as firebaseAuth from 'firebase/auth';
 import { auth } from './src/firebaseConfig';
 import { format } from 'date-fns';
+import { PayrollRecord } from './types';
 
 const App: React.FC = () => {
     const [user, setUser] = useState<firebaseAuth.User | null>(null);
@@ -39,8 +46,9 @@ const App: React.FC = () => {
     const [insuranceData, setInsuranceData] = useState<InsuranceRecord[] | null>(null);
 
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState<'sales' | 'invoices' | 'crossed' | 'expenses' | 'debts' | 'services' | 'zetti' | 'shopping' | 'mixMaestro' | 'import' | 'sellers'>('mixMaestro');
+    const [activeTab, setActiveTab] = useState<'live' | 'sales' | 'invoices' | 'crossed' | 'expenses' | 'debts' | 'services' | 'zetti' | 'shopping' | 'mixMaestro' | 'import' | 'sellers' | 'payroll' | 'insurance'>('mixMaestro');
     const [selectedSeller, setSelectedSeller] = useState<string | null>(null);
+    const [payrollData, setPayrollData] = useState<PayrollRecord[] | null>(null);
     const [showReport, setShowReport] = useState(false);
     const [selectedBranch, setSelectedBranch] = useState<string>('all');
     const [startDate, setStartDate] = useState<string>(format(new Date(), 'yyyy-MM-01'));
@@ -163,6 +171,8 @@ const App: React.FC = () => {
         return Array.from(map.values());
     }, [enrichedSalesData, stockData]);
 
+    const [supplierCategories, setSupplierCategories] = useState<Record<string, string>>({});
+
     useEffect(() => {
         const unsubscribe = firebaseAuth.onAuthStateChanged(auth, (user) => {
             setUser(user);
@@ -176,21 +186,27 @@ const App: React.FC = () => {
             if (!user) return;
             setLoading(true);
             try {
-                const [sales, invoices, expenses, currentAccounts, stock, insurance] = await Promise.all([
+                const [sales, invoices, expenses, currentAccounts, stock, insurance, services, cats, payroll] = await Promise.all([
                     getAllSalesFromDB(),
                     getAllInvoicesFromDB(),
                     getAllExpensesFromDB(),
                     getAllCurrentAccountsFromDB(),
                     getAllStockFromDB(),
-                    getAllInsuranceFromDB()
+                    getAllInsuranceFromDB(),
+                    getAllServicesFromDB(),
+                    getMetadata('service_categories'),
+                    getAllPayrollFromDB()
                 ]);
                 setSalesData(sales);
                 setInvoiceData(invoices);
                 setExpenseData(expenses);
-                setServiceData(expenses); // Feed expenses to services dashboard
+                // Combine expenses with specifically imported manual services
+                setServiceData([...expenses, ...services]);
                 setCurrentAccountData(currentAccounts);
                 setStockData(stock);
                 setInsuranceData(insurance);
+                setPayrollData(payroll);
+                if (cats) setSupplierCategories(cats);
             } catch (error) {
                 console.error("Error loading data:", error);
             } finally {
@@ -231,13 +247,18 @@ const App: React.FC = () => {
             complete: async (results) => {
                 const processed = processExpenseData(results.data as any[]);
                 console.log("Expenses processed:", processed.length);
-                setExpenseData(processed);
+
                 await saveExpensesToDB(processed);
 
-                // Also update services logic if needed by combining or refetching
-                // For now, serviceData is fed from expenses in loadData, 
-                // but if we upload expenses, we should update serviceData too if it relies on it.
-                // However, we are about to handle service upload separately for "Manual Services"
+                // Refresh both to ensure services dashboard is updated
+                const [allExpenses, allServices] = await Promise.all([
+                    getAllExpensesFromDB(),
+                    getAllServicesFromDB()
+                ]);
+
+                setExpenseData(allExpenses);
+                setServiceData([...allExpenses, ...allServices]);
+                alert(`Se importaron ${processed.length} registros de gastos.`);
             }
         });
     };
@@ -253,40 +274,52 @@ const App: React.FC = () => {
                 const processed = processServiceData(results.data as any[]);
                 console.log("Services processed (from CSV):", processed.length);
 
-                // We join the existing expenses with these new services to ensure EVERYTHING is visible
-                // Or better, we save these to 'services.json' as DISTINCT manual entries
-                // to avoid overwriting the API expenses.
-
-                // Add a flag to identify these as manual imports if needed
                 const manualServices = processed.map(p => ({ ...p, source: 'manual_csv' }));
-
-                setServiceData(prev => {
-                    // Combine with existing (providing uniqueness check if needed) or replace?
-                    // User probably wants to ADD/UPDATE manual data.
-                    return [...prev, ...manualServices];
-                });
-
                 await saveServicesToDB(manualServices);
+
+                // Refresh both to ensure services dashboard has everything
+                const [allExpenses, allServices] = await Promise.all([
+                    getAllExpensesFromDB(),
+                    getAllServicesFromDB()
+                ]);
+
+                setServiceData([...allExpenses, ...allServices]);
                 alert(`Se importaron ${manualServices.length} registros de servicios.`);
             }
         });
     };
 
-    const handleCurrentAccountUpload = (e: React.ChangeEvent<HTMLInputElement>) => { /* ... */ };
+    const handleCurrentAccountUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        Papa.parse(file, {
+            header: true,
+            skipEmptyLines: true,
+            complete: async (results) => {
+                const processed = processCurrentAccountData(results.data as any[]);
+                console.log("Current Account records processed:", processed.length);
+                setCurrentAccountData(processed);
+                await saveCurrentAccountsToDB(processed);
+                alert(`Se importaron ${processed.length} movimientos de Cuenta Corriente.`);
+            }
+        });
+    };
     const handleStockUpload = (e: React.ChangeEvent<HTMLInputElement>) => { /* ... */ };
     const handleInsuranceUpload = (e: React.ChangeEvent<HTMLInputElement>) => { /* ... */ };
 
     const handleZettiImport = async (data: any) => {
         // Refresh all data from DB after sync in background
         try {
-            const [sales, invoices, expenses, currentAccounts, stock, insurance, services] = await Promise.all([
+            const [sales, invoices, expenses, currentAccounts, stock, insurance, services, cats] = await Promise.all([
                 getAllSalesFromDB(),
                 getAllInvoicesFromDB(),
                 getAllExpensesFromDB(),
                 getAllCurrentAccountsFromDB(),
                 getAllStockFromDB(),
                 getAllInsuranceFromDB(),
-                getAllServicesFromDB()
+                getAllServicesFromDB(),
+                getMetadata('service_categories')
             ]);
 
             setSalesData(sales);
@@ -295,6 +328,7 @@ const App: React.FC = () => {
             setCurrentAccountData(currentAccounts);
             setStockData(stock);
             setInsuranceData(insurance);
+            if (cats) setSupplierCategories(cats);
 
             // Combine API expenses (potential services) + Manual Services
             setServiceData([...expenses, ...services]);
@@ -302,6 +336,55 @@ const App: React.FC = () => {
         } catch (error) {
             console.error("Error refreshing data:", error);
         }
+    };
+
+    const handleClearCurrentAccount = async () => {
+        if (!confirm("¿Seguro que deseas borrar TODA la información de Cuentas Corrientes?")) return;
+        await clearCurrentAccountsDB();
+        setCurrentAccountData([]);
+        alert("Información de Cuentas Corrientes borrada.");
+    };
+
+    const handleClearExpenses = async () => {
+        if (!confirm("¿Seguro que deseas borrar toda la información de Gastos?")) return;
+        await clearExpensesDB();
+        setExpenseData([]);
+        alert("Información de Gastos borrada.");
+    };
+
+    const handleClearServices = async () => {
+        if (!confirm("¿Seguro que deseas borrar toda la información de Servicios?")) return;
+        await clearServicesDB();
+        setServiceData([]);
+        alert("Información de Servicios borrada.");
+    };
+
+    const handleClearSales = async () => {
+        if (!confirm("¿Seguro que deseas borrar toda la información de Ventas?")) return;
+        await clearSalesDB();
+        setSalesData([]);
+        alert("Información de Ventas borrada.");
+    };
+
+    const handleClearInvoices = async () => {
+        if (!confirm("¿Seguro que deseas borrar toda la información de Facturas de Venta?")) return;
+        await clearInvoicesDB();
+        setInvoiceData([]);
+        alert("Información de Facturas de Venta borrada.");
+    };
+
+    const handleClearStock = async () => {
+        if (!confirm("¿Seguro que deseas borrar toda la información de Stock?")) return;
+        await clearStockDB();
+        setStockData([]);
+        alert("Información de Stock borrada.");
+    };
+
+    const handleClearInsurance = async () => {
+        if (!confirm("¿Seguro que deseas borrar toda la información de Seguros/Otras Entidades?")) return;
+        await clearInsuranceDB();
+        setInsuranceData([]);
+        alert("Información de Seguros borrada.");
     };
 
     const handleClearData = async () => {
@@ -364,6 +447,13 @@ const App: React.FC = () => {
                         <Blend className="w-5 h-5 shrink-0" />
                         <span className={`${sidebarExpanded ? 'opacity-100' : 'opacity-0 translate-x-4'} transition-all duration-300 whitespace-nowrap`}>Mix Maestro</span>
                     </button>
+
+                    <div className="h-4"></div>
+                    <p className={`text-[10px] font-black text-slate-500 uppercase tracking-widest px-4 mb-2 truncate transition-opacity duration-300 ${sidebarExpanded ? 'opacity-100' : 'opacity-0'}`}>CENTRAL LIVE</p>
+                    <button onClick={() => setActiveTab('live')} className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 ${activeTab === 'live' ? 'bg-indigo-600 text-white shadow-lg font-black' : 'text-slate-400 hover:text-white hover:bg-slate-800 font-medium'}`}>
+                        <Activity className={`w-5 h-5 shrink-0 ${activeTab === 'live' ? 'animate-pulse' : ''}`} />
+                        <span className={`${sidebarExpanded ? 'opacity-100' : 'opacity-0 translate-x-4'} transition-all duration-300 whitespace-nowrap`}>Live Monitor</span>
+                    </button>
                     <button onClick={() => setActiveTab('crossed')} className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 ${activeTab === 'crossed' ? 'bg-slate-800 text-white font-black border border-slate-700' : 'text-slate-400 hover:text-white hover:bg-slate-800 font-medium'}`}>
                         <Radar className="w-5 h-5 shrink-0" />
                         <span className={`${sidebarExpanded ? 'opacity-100' : 'opacity-0 translate-x-4'} transition-all duration-300 whitespace-nowrap`}>Cruce de Datos</span>
@@ -374,6 +464,10 @@ const App: React.FC = () => {
                     <button onClick={() => setActiveTab('sellers')} className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 ${activeTab === 'sellers' ? 'bg-amber-500 text-white shadow-lg font-black' : 'text-slate-400 hover:text-white hover:bg-slate-800 font-medium'}`}>
                         <Users className="w-5 h-5 shrink-0" />
                         <span className={`${sidebarExpanded ? 'opacity-100' : 'opacity-0 translate-x-4'} transition-all duration-300 whitespace-nowrap`}>Panel Vendedores</span>
+                    </button>
+                    <button onClick={() => setActiveTab('payroll')} className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 ${activeTab === 'payroll' ? 'bg-teal-600 text-white shadow-lg font-black' : 'text-slate-400 hover:text-white hover:bg-slate-800 font-medium'}`}>
+                        <Banknote className="w-5 h-5 shrink-0" />
+                        <span className={`${sidebarExpanded ? 'opacity-100' : 'opacity-0 translate-x-4'} transition-all duration-300 whitespace-nowrap`}>Sueldos & RRHH</span>
                     </button>
 
                     <div className="h-4"></div>
@@ -389,6 +483,10 @@ const App: React.FC = () => {
                     <button onClick={() => setActiveTab('debts')} className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 ${activeTab === 'debts' ? 'bg-slate-800 text-white font-black border border-slate-700' : 'text-slate-400 hover:text-white hover:bg-slate-800 font-medium'}`}>
                         <Wallet className="w-5 h-5 shrink-0" />
                         <span className={`${sidebarExpanded ? 'opacity-100' : 'opacity-0 translate-x-4'} transition-all duration-300 whitespace-nowrap`}>Cuentas Corrientes</span>
+                    </button>
+                    <button onClick={() => setActiveTab('insurance')} className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 ${activeTab === 'insurance' ? 'bg-slate-800 text-white font-black border border-slate-700' : 'text-slate-400 hover:text-white hover:bg-slate-800 font-medium'}`}>
+                        <ShieldCheck className="w-5 h-5 shrink-0" />
+                        <span className={`${sidebarExpanded ? 'opacity-100' : 'opacity-0 translate-x-4'} transition-all duration-300 whitespace-nowrap`}>Obras Sociales</span>
                     </button>
 
                 </div>
@@ -434,6 +532,9 @@ const App: React.FC = () => {
                         </div>
                     ) : (
                         <div className="max-w-[1600px] mx-auto">
+                            {activeTab === 'live' && (
+                                <LiveDashboard />
+                            )}
                             {activeTab === 'sales' && (
                                 <Dashboard
                                     data={enrichedSalesData || []}
@@ -494,6 +595,9 @@ const App: React.FC = () => {
                                     selectedBranch={selectedBranch}
                                     onSelectBranch={setSelectedBranch}
                                     onUpload={handleExpenseUpload}
+                                    onClear={handleClearExpenses}
+                                    supplierCategories={supplierCategories}
+                                    setSupplierCategories={setSupplierCategories}
                                 />
                             )}
                             {activeTab === 'services' && (
@@ -506,16 +610,47 @@ const App: React.FC = () => {
                                     selectedBranch={selectedBranch}
                                     onSelectBranch={setSelectedBranch}
                                     onUpload={handleServiceUpload}
+                                    onClear={handleClearServices}
+                                    supplierCategories={supplierCategories}
+                                    setSupplierCategories={setSupplierCategories}
                                 />
                             )}
-                            {activeTab === 'debts' && <CurrentAccountDashboard data={currentAccountData || []} />}
+                            {activeTab === 'debts' && (
+                                <CurrentAccountDashboard
+                                    data={currentAccountData || []}
+                                    onUpload={handleCurrentAccountUpload}
+                                    onClear={handleClearCurrentAccount}
+                                />
+                            )}
+                            {activeTab === 'insurance' && (
+                                <InsuranceDashboard
+                                    data={insuranceData || []}
+                                    startDate={startDate}
+                                    endDate={endDate}
+                                    onStartDateChange={setStartDate}
+                                    onEndDateChange={setEndDate}
+                                    onUploadInsurance={() => { }}
+                                />
+                            )}
                             {activeTab === 'zetti' && <ZettiSync startDate={startDate} endDate={endDate} onDataImported={handleZettiImport} />}
                             {activeTab === 'shopping' && <ShoppingAssistant salesData={enrichedSalesData || []} stockData={stockData || []} onSelectProduct={(p) => { setActiveTab('sales'); }} />}
+                            {activeTab === 'payroll' && (
+                                <PayrollDashboard
+                                    startDate={startDate}
+                                    endDate={endDate}
+                                    selectedBranch={selectedBranch}
+                                    onPayrollUpdate={async () => {
+                                        const p = await getAllPayrollFromDB();
+                                        setPayrollData(p);
+                                    }}
+                                />
+                            )}
                             {activeTab === 'mixMaestro' && (
                                 <MixMaestroDashboard
                                     data={unifiedFromSales}
                                     expenseData={expenseData || []}
                                     serviceData={serviceData || []}
+                                    payrollData={payrollData || []}
                                     startDate={startDate}
                                     endDate={endDate}
                                     onStartDateChange={setStartDate}

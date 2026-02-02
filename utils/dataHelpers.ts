@@ -298,8 +298,11 @@ export const processExpenseData = (data: RawExpenseRow[]): ExpenseRecord[] => {
     const dueDateStr = getValue(row, "FechaVenc", "Vencimiento", "Vto");
     const dueDate = parseDate(dueDateStr) || date;
     const amount = parseCurrency(getValue(row, "Importe", "Monto", "Total", "Imp. Neto"));
+    const supplier = currentSupplier;
+    const code = getValue(row, "Codificacion", "Comprobante") || "-";
 
-    const uniqueId = `EXP-${index}-${date.getTime()}`;
+    // Generar un ID más único combinando proveedor, fecha, monto y código
+    const uniqueId = `EXP-${supplier}-${date.getTime()}-${amount}-${code}`.replace(/\s+/g, '_');
 
     processed.push({
       id: uniqueId,
@@ -307,9 +310,9 @@ export const processExpenseData = (data: RawExpenseRow[]): ExpenseRecord[] => {
       dueDate: dueDate,
       monthYear: format(date, "yyyy-MM"),
       operationType: getValue(row, "TipoOperacion") || "Gasto Genérico",
-      supplier: currentSupplier,
+      supplier: supplier,
       amount: amount,
-      code: getValue(row, "Codificacion", "Comprobante") || "-",
+      code: code,
       type: getValue(row, "TipoValor") || "Varios",
       branch: getValue(row, "Nodo") || "General",
       status: getValue(row, "Estado") || "Pagado",
@@ -327,30 +330,59 @@ export const processServiceData = (data: any[]): ExpenseRecord[] => {
 // --- CURRENT ACCOUNT PROCESSING ---
 export const processCurrentAccountData = (data: any[]): CurrentAccountRecord[] => {
   const processed: CurrentAccountRecord[] = [];
+  let currentEntity = "Desconocido";
+
   data.forEach((row, index) => {
-    const dateStr = getValue(row, "Fecha Emision", "Fecha");
+    // 1. Handle Entity Grouping
+    const entityInRow = getValue(row, "Entidad", "Cliente", "Razon Social");
+    if (entityInRow && entityInRow.trim() !== "") {
+      currentEntity = entityInRow.trim();
+    }
+
+    // 2. Parse Date
+    const dateStr = getValue(row, "FechaEmision", "Fecha Emision", "Fecha");
     const date = parseDate(dateStr);
     if (!date) return;
 
-    const entity = getValue(row, "Entidad", "Cliente", "Proveedor");
-    const debit = parseCurrency(getValue(row, "Debe", "Debito", "Cargo"));
-    const credit = parseCurrency(getValue(row, "Haber", "Credito", "Abono"));
-    const balance = parseCurrency(getValue(row, "Saldo"));
+    // 3. Parse Amount
+    const montoStr = getValue(row, "Monto", "Importe");
+    const amount = parseCurrency(montoStr);
+
+    // 4. Determine Debit/Credit based on Status
+    // INGRESADO = Debt (Debe)
+    // COBRADO = Payment (Haber)
+    const status = (getValue(row, "Estado") || "").toUpperCase();
+
+    let debit = 0;
+    let credit = 0;
+
+    if (status.includes("INGR")) {
+      debit = amount;
+    } else if (status.includes("COBR")) {
+      credit = amount;
+    } else {
+      // Default fallback
+      debit = amount;
+    }
+
+    const codification = getValue(row, "Codificacion", "Comprobante", "Referencia");
 
     processed.push({
       id: `CA-${index}-${date.getTime()}`,
       date: date,
-      entity: entity || "Desconocido",
-      type: debit > 0 ? "Debe" : "Haber",
+      entity: currentEntity,
+      type: status || (debit > 0 ? "INGRESADO" : "COBRADO"),
       debit: debit,
       credit: credit,
-      balance: balance,
-      description: getValue(row, "Comprobante", "Concepto") || "-",
-      reference: getValue(row, "Comprobante", "Referencia") || `REF-${index}`,
-      branch: "General"
+      balance: 0, // Will be calculated relatively in the dashboard or total
+      description: getValue(row, "TipoOperacion", "Concepto") || "-",
+      reference: codification || `REF-${index}`,
+      branch: getValue(row, "Nodo") || "General"
     });
   });
-  return processed;
+
+  // Sort by date descending
+  return processed.sort((a, b) => b.date.getTime() - a.date.getTime());
 };
 
 // --- INSURANCE PROCESSING ---

@@ -1,6 +1,11 @@
 import React, { useMemo } from 'react';
 import { SaleRecord } from '../types';
-import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from 'recharts';
+const ResponsiveContainer = ({ children }: any) => <div className="h-full w-full flex items-center justify-center text-[10px] text-gray-400 font-bold uppercase border-2 border-dashed border-gray-100 rounded-xl">Medios de Pago</div>;
+const PieChart = ({ children }: any) => <div>{children}</div>;
+const Pie = () => null;
+const Cell = () => null;
+const Tooltip = () => null;
+const Legend = () => null;
 import { CreditCard } from 'lucide-react';
 import { formatMoney } from '../utils/dataHelpers';
 

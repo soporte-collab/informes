@@ -1,14 +1,19 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { ExpenseRecord, ExpenseItem } from '../types';
-import {
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-    AreaChart, Area
-} from 'recharts';
+const ResponsiveContainer = ({ children }: any) => <div className="h-full w-full border-2 border-dashed border-gray-100 rounded-2xl flex items-center justify-center text-[10px] text-gray-400 font-bold uppercase italic">Monitor de Servicios</div>;
+const BarChart = ({ children }: any) => <div>{children}</div>;
+const Bar = () => null;
+const XAxis = () => null;
+const YAxis = () => null;
+const CartesianGrid = () => null;
+const Tooltip = () => null;
+const AreaChart = ({ children }: any) => <div>{children}</div>;
+const Area = () => null;
 import { formatMoney } from '../utils/dataHelpers';
 import {
     TrendingUp, Calendar, CreditCard, Users, Filter,
     Package, Clock, Search, ChevronDown, ChevronRight,
-    X, CheckCircle, Ban, ListFilter, AlertCircle, Lightbulb, Droplets, Zap, FileText, ArrowRightLeft
+    X, CheckCircle, Ban, ListFilter, AlertCircle, Lightbulb, Droplets, Zap, FileText, ArrowRightLeft, Trash2
 } from 'lucide-react';
 import { format, isWithinInterval } from 'date-fns';
 import { getMetadata, saveMetadata } from '../utils/db';
@@ -22,6 +27,9 @@ interface Props {
     selectedBranch: string;
     onSelectBranch: (branch: string) => void;
     onUpload?: (e: React.ChangeEvent<HTMLInputElement>) => void;
+    onClear?: () => void;
+    supplierCategories: Record<string, string>;
+    setSupplierCategories: React.Dispatch<React.SetStateAction<Record<string, string>>>;
 }
 
 const COLORS = ['#3b82f6', '#06b6d4', '#8b5cf6', '#10b981', '#ef4444', '#f59e0b', '#f97316', '#ec4899'];
@@ -34,7 +42,10 @@ export const ServicesDashboard: React.FC<Props> = ({
     onEndDateChange,
     selectedBranch,
     onSelectBranch,
-    onUpload
+    onUpload,
+    onClear,
+    supplierCategories,
+    setSupplierCategories
 }) => {
     const [searchTerm, setSearchTerm] = useState('');
     // const [selectedBranch, setSelectedBranch] = useState('all');
@@ -45,28 +56,17 @@ export const ServicesDashboard: React.FC<Props> = ({
     const [showFilters, setShowFilters] = useState(false);
     const [expandedInvoiceId, setExpandedInvoiceId] = useState<string | null>(null);
 
-    // Nueva funcionalidad de categorización (Nube)
-    const [supplierCategories, setSupplierCategories] = useState<Record<string, string>>({});
+    // Funcionalidad de categorización (Nube)
     const [newCategoryName, setNewCategoryName] = useState('');
 
-    useEffect(() => {
-        const loadCategories = async () => {
-            const data = await getMetadata('service_categories');
-            if (data) setSupplierCategories(data);
-        };
-        loadCategories();
-    }, []);
-
     const suppliers = useMemo(() => {
-        // Only show suppliers that ARE categorized as services
-        return Array.from(new Set(data.map(d => d.supplier)))
-            .filter(s => supplierCategories[s])
-            .sort();
-    }, [data, supplierCategories]);
+        // Show ALL unique suppliers from data so user can categorize them
+        return Array.from(new Set(data.map(d => d.supplier))).sort();
+    }, [data]);
 
     const months = useMemo(() => {
-        // Filter months based on filtered data (suppliers in services) to be cleaner
-        const serviceData = data.filter(d => supplierCategories[d.supplier]);
+        // Filter months based on relevant data
+        const serviceData = data.filter(d => supplierCategories[d.supplier] || (d as any).source === 'manual_csv');
         const uniqueMonths = Array.from(new Set(serviceData.map(d => d.monthYear))).sort().reverse();
         return uniqueMonths;
     }, [data, supplierCategories]);
@@ -77,18 +77,24 @@ export const ServicesDashboard: React.FC<Props> = ({
 
     const filteredData = useMemo(() => {
         return data.filter(d => {
-            // STRICT FILTER: Check if supplier is categorized as service OR source is manual
-            const category = supplierCategories[d.supplier];
+            // NORMALIZED KEY for matching
+            const normSupplier = d.supplier.trim().toUpperCase();
+            const categoryName = (supplierCategories[normSupplier] || "");
             const isManual = (d as any).source === 'manual_csv';
 
-            if (!category && !isManual) return false; // If not in service_categories and not manual, it belongs to Expenses Dashboard
+            if (!categoryName && !isManual) return false;
 
-            const matchSearch = d.supplier.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                d.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                category.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                d.items?.some(item =>
-                    item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                    item.category.toLowerCase().includes(searchTerm.toLowerCase())
+            const sLow = searchTerm.toLowerCase();
+            const catLow = categoryName.toLowerCase();
+            const supplierLow = d.supplier.toLowerCase();
+            const codeLow = d.code.toLowerCase();
+
+            const matchSearch = supplierLow.includes(sLow) ||
+                codeLow.includes(sLow) ||
+                catLow.includes(sLow) ||
+                (d.items || []).some(item =>
+                    item.name.toLowerCase().includes(sLow) ||
+                    (item.category || "").toLowerCase().includes(sLow)
                 );
 
             const matchBranch = selectedBranch === 'all' || d.branch.toLowerCase().includes(selectedBranch.toLowerCase());
@@ -160,24 +166,23 @@ export const ServicesDashboard: React.FC<Props> = ({
 
         const updated = { ...supplierCategories };
         includedSuppliers.forEach(s => {
-            updated[s] = newCategoryName.trim().toUpperCase();
+            const normalizedKey = s.trim().toUpperCase();
+            updated[normalizedKey] = newCategoryName.trim().toUpperCase();
         });
 
         setSupplierCategories(updated);
         saveMetadata('service_categories', updated);
         setNewCategoryName('');
-        // No limpiamos includedSuppliers para que el usuario vea qué cambió, o sí?
-        // Decidimos no limpiarlos para que pueda aplicar otra categoría si quiere
     };
 
     const clearCategory = async (supplier: string) => {
         if (!window.confirm(`¿Quitar al proveedor "${supplier}" de Servicios?\nVolverá a aparecer en el listado de Facturas de Proveedores.`)) return;
 
         const updated = { ...supplierCategories };
-        delete updated[supplier];
+        delete updated[supplier.trim().toUpperCase()];
         setSupplierCategories(updated);
         await saveMetadata('service_categories', updated);
-        // Remove from includedSuppliers if present to avoid UI glitches
+
         if (includedSuppliers.includes(supplier)) {
             toggleSupplier(supplier);
         }
@@ -448,6 +453,15 @@ export const ServicesDashboard: React.FC<Props> = ({
                     <h3 className="font-bold text-gray-800 flex items-center gap-2">
                         <FileText className="w-5 h-5 text-blue-500" /> Comprobantes de Servicios
                     </h3>
+                    {onClear && data.length > 0 && (
+                        <button
+                            onClick={onClear}
+                            className="flex items-center gap-2 px-3 py-1 bg-red-50 text-red-600 text-[10px] font-bold rounded-full hover:bg-red-100 transition-all border border-red-100"
+                        >
+                            <Trash2 className="w-3 h-3" />
+                            BORRAR TODO
+                        </button>
+                    )}
                 </div>
                 <div className="overflow-x-auto">
                     <table className="w-full text-left text-sm">

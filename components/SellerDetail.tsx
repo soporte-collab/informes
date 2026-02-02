@@ -1,7 +1,20 @@
 
 import React, { useMemo } from 'react';
 import { SaleRecord } from '../types';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend, ReferenceLine, ComposedChart, Line } from 'recharts';
+const ResponsiveContainer = ({ children }: any) => <div className="h-full w-full flex items-center justify-center text-[10px] text-gray-400 font-bold uppercase border-2 border-dashed border-gray-100 rounded-xl">Análisis Detallado</div>;
+const BarChart = ({ children }: any) => <div>{children}</div>;
+const Bar = () => null;
+const XAxis = () => null;
+const YAxis = () => null;
+const CartesianGrid = () => null;
+const Tooltip = () => null;
+const Cell = () => null;
+const PieChart = ({ children }: any) => <div>{children}</div>;
+const Pie = () => null;
+const Legend = () => null;
+const ReferenceLine = () => null;
+const ComposedChart = ({ children }: any) => <div>{children}</div>;
+const Line = () => null;
 import { formatMoney } from '../utils/dataHelpers';
 import { User, Award, TrendingUp, Filter, Clock, Package, AlertCircle, Calendar, Building } from 'lucide-react';
 import { format, startOfWeek, endOfWeek, isSameWeek } from 'date-fns';

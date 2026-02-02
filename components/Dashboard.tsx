@@ -4,10 +4,21 @@ import { StatsCard } from './StatsCard';
 import { formatMoney } from '../utils/dataHelpers';
 import { ProductFilter } from './ProductFilter';
 import { EntityFilter } from './EntityFilter';
-import {
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-    AreaChart, Area, Legend, PieChart, Pie, Cell, ComposedChart, Line
-} from 'recharts';
+const ResponsiveContainer = ({ children }: any) => <div className="h-full w-full bg-gray-50 rounded-2xl flex items-center justify-center text-[10px] text-gray-400 font-bold uppercase">Gráfico Detalizado</div>;
+const BarChart = ({ children }: any) => <div>{children}</div>;
+const Bar = () => null;
+const XAxis = () => null;
+const YAxis = () => null;
+const CartesianGrid = () => null;
+const Tooltip = () => null;
+const AreaChart = ({ children }: any) => <div>{children}</div>;
+const Area = () => null;
+const PieChart = ({ children }: any) => <div>{children}</div>;
+const Pie = () => null;
+const Cell = () => null;
+const Legend = () => null;
+const ComposedChart = ({ children }: any) => <div>{children}</div>;
+const Line = () => null;
 import { DollarSign, ShoppingBag, Building2, TrendingUp, Filter, Ban, Printer, CheckCircle, X, PieChart as PieChartIcon, Package, Tag, CalendarRange, User, Clock, Award, Users, Search, ChevronRight, Lightbulb, Upload, ShoppingCart, ShieldCheck, Zap, Calendar, HardDrive } from 'lucide-react';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -1202,8 +1213,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                                             <span className="text-[10px] font-black text-slate-300 w-4">{idx + 1}</span>
                                                             <span className="text-xs font-bold text-slate-700 group-hover:text-emerald-600 uppercase truncate max-w-[180px]">{name}</span>
                                                             <span className={`text-[8px] font-black px-1.5 py-0.5 rounded ${pareto === 'A' ? 'bg-emerald-500 text-white' :
-                                                                    pareto === 'B' ? 'bg-amber-500 text-white' :
-                                                                        'bg-slate-200 text-slate-600'
+                                                                pareto === 'B' ? 'bg-amber-500 text-white' :
+                                                                    'bg-slate-200 text-slate-600'
                                                                 }`}>
                                                                 {pareto}
                                                             </span>

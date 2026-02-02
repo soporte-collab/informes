@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { eachDayOfInterval, parseISO } from 'date-fns';
-import { RefreshCw, Database, CloudLightning, ShieldCheck, AlertCircle, CheckCircle2, Search, Download, User, ShoppingBag, CreditCard, ChevronDown, HeartPulse, Trash2, Calendar, Upload, Truck, Wallet } from 'lucide-react';
+import { RefreshCw, Database, CloudLightning, ShieldCheck, AlertCircle, CheckCircle2, Search, Download, User, ShoppingBag, CreditCard, ChevronDown, HeartPulse, Trash2, Calendar, Upload, Truck, Wallet, Eye, FileJson, Layers, X } from 'lucide-react';
 import { searchZettiInvoices, searchZettiInvoiceByNumber, ZETTI_NODES, searchZettiProviderReceipts, searchZettiInsuranceReceipts, searchZettiCustomers } from '../utils/zettiService';
 import { formatMoney } from '../utils/dataHelpers';
 import { format } from 'date-fns';
@@ -19,10 +19,21 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
     const [status, setStatus] = useState<'idle' | 'tunneling' | 'success' | 'error'>('idle');
     const [error, setError] = useState<string | null>(null);
     const [results, setResults] = useState<any[]>([]);
+    const [rawSales, setRawSales] = useState<any[]>([]);
+    const [rawExpenses, setRawExpenses] = useState<any[]>([]);
+    const [rawInsurance, setRawInsurance] = useState<any[]>([]);
+    const [viewTab, setViewTab] = useState<'sales' | 'expenses' | 'insurance'>('sales');
+    const [showInspector, setShowInspector] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
     const [syncProgress, setSyncProgress] = useState<Record<string, 'pending' | 'syncing' | 'success' | 'error'>>({});
     const [counts, setCounts] = useState<Record<string, number>>({});
     const [logs, setLogs] = useState<{ msg: string; type: 'info' | 'success' | 'warn' | 'error' }[]>([]);
+
+    useEffect(() => {
+        if (viewTab === 'sales') setResults(rawSales);
+        else if (viewTab === 'expenses') setResults(rawExpenses);
+        else if (viewTab === 'insurance') setResults(rawInsurance);
+    }, [viewTab, rawSales, rawExpenses, rawInsurance]);
 
     const addLog = (msg: string, type: 'info' | 'success' | 'warn' | 'error' = 'info') => {
         setLogs(prev => [...prev.slice(-49), { msg, type }]);
@@ -130,11 +141,10 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
             setSyncProgress(prev => ({ ...prev, sales: 'success', expenses: 'success', insurance: 'success' }));
 
             // 2. Sincronizar Clientes/Saldos (Cta Cte) - Una sola vez al final
-            console.log('%c[FINAL] Sincronizando Saldos de Clientes...', 'color: #ec4899; font-weight: bold;');
             setSyncProgress(prev => ({ ...prev, customers: 'syncing' }));
             const [custBio, custChacras] = await Promise.all([
-                searchZettiCustomers(ZETTI_NODES.BIOSALUD, { pageSize: 1000 }),
-                searchZettiCustomers(ZETTI_NODES.CHACRAS, { pageSize: 1000 })
+                searchZettiCustomers(ZETTI_NODES.BIOSALUD, { pageSize: 100 }),
+                searchZettiCustomers(ZETTI_NODES.CHACRAS, { pageSize: 100 })
             ]);
             const combinedCustomers = [
                 ...(custBio.content || custBio || []).map((r: any) => ({ ...r, _branch: 'FCIA BIOSALUD' })),
@@ -143,9 +153,13 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
             setCounts(prev => ({ ...prev, customers: combinedCustomers.length }));
             setSyncProgress(prev => ({ ...prev, customers: 'success' }));
             addLog(`Sincronización de ${combinedCustomers.length} clientes finalizada`, 'success');
-            addLog('Guardando datos en Firebase Storage...', 'info');
 
-            console.log('%c[COMPLETO] Sincronización finalizada exitosamente 🎉', 'color: #10b981; font-weight: bold; font-size: 14px;');
+            // Actualizar estados para el inspector
+            setRawSales(allSales);
+            setRawExpenses(allExpenses);
+            setRawInsurance(allInsurance);
+            setViewTab('sales');
+            setResults(allSales);
             setStatus('success');
 
             // Persistir todo
@@ -212,6 +226,9 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
             invoices.push(invoice);
 
             (item.items || []).forEach((it: any) => {
+                // Capturamos el costo si Zetti lo manda (como costPrice o purchaseCost)
+                const unitCost = it.costPrice || it.purchaseCost || it.cost || 0;
+
                 allSales.push({
                     id: `${invoice.id}-${it.id || Math.random()}`,
                     invoiceNumber: invoice.invoiceNumber,
@@ -228,6 +245,7 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
                     paymentMethod: invoice.paymentType,
                     barcode: it.bar || '',
                     manufacturer: it.lab || 'Zetti',
+                    unitCost: unitCost,
                     hour: new Date(rawDate).getHours()
                 });
             });
@@ -460,6 +478,7 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
                     return dateB - dateA;
                 });
                 setAuditResult(results[0]);
+                setShowInspector(true);
             } else {
                 setAuditError('No se encontró el comprobante.');
             }
@@ -825,57 +844,95 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
                 </div>
             </div>
 
-            {/* --- RESULTADOS --- */}
+            {/* --- RESULTADOS & INSPECTOR --- */}
             {status === 'success' && (
-                <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="bg-white rounded-[32px] border border-slate-200 shadow-xl overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
                     <div className="p-6 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
                         <div className="flex items-center gap-4">
-                            <div className="bg-emerald-500 p-2 rounded-lg">
-                                <CheckCircle2 className="w-5 h-5 text-white" />
+                            <div className="bg-indigo-600 p-2.5 rounded-2xl shadow-lg shadow-indigo-100">
+                                <FileJson className="w-5 h-5 text-white" />
                             </div>
                             <div>
-                                <h4 className="font-black text-slate-800 text-sm">Captura Finalizada: {results.length} registros</h4>
-                                <p className="text-[10px] text-slate-500 font-bold uppercase">Datos listos para ser procesados</p>
+                                <h4 className="font-black text-slate-800 text-sm uppercase tracking-tight">Captura de Datos Zetti</h4>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">Inspector de Respuesta Cruda</p>
                             </div>
                         </div>
-                        <button
-                            onClick={handleImport}
-                            className="bg-emerald-600 hover:bg-emerald-500 text-white px-8 py-3 rounded-xl font-black text-xs transition-all shadow-lg shadow-emerald-600/20"
-                        >
-                            PASAR AL PANEL GENERAL
-                        </button>
+                        <div className="flex bg-slate-200/50 p-1.5 rounded-2xl gap-1">
+                            <button onClick={() => setViewTab('sales')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${viewTab === 'sales' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}>Ventas</button>
+                            <button onClick={() => setViewTab('expenses')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${viewTab === 'expenses' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}>Gastos</button>
+                            <button onClick={() => setViewTab('insurance')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${viewTab === 'insurance' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}>O.S.</button>
+                        </div>
                     </div>
-                    <div className="max-h-[400px] overflow-auto">
+
+                    <div className="max-h-[400px] overflow-auto custom-scrollbar">
                         <table className="w-full text-left text-xs">
-                            <thead className="bg-slate-100 text-slate-500 sticky top-0 uppercase font-black text-[10px] tracking-tighter">
+                            <thead className="bg-white text-slate-400 sticky top-0 uppercase font-black text-[9px] tracking-widest border-b border-slate-100">
                                 <tr>
-                                    <th className="p-4">Fecha</th>
-                                    <th className="p-4">Comprobante</th>
-                                    <th className="p-4">Cliente</th>
-                                    <th className="p-4 text-right">Monto</th>
+                                    <th className="p-6">Fecha/Hora</th>
+                                    <th className="p-6">Identificador</th>
+                                    <th className="p-6">Origen / Tercero</th>
+                                    <th className="p-6 text-right">Monto Neto</th>
+                                    <th className="p-6 text-center">Detalle</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {results.map((r, i) => (
-                                    <tr key={i} className="hover:bg-blue-50/50 transition-colors">
-                                        <td className="p-4 font-bold text-slate-600">{r.fec ? format(new Date(r.fec), 'dd/MM HH:mm') : '-'}</td>
-                                        <td className="p-4 font-mono font-black text-blue-600">{r.cod}</td>
-                                        <td className="p-4 font-bold text-slate-700 truncate max-w-[200px]">{r.cli || 'Particular'}</td>
-                                        <td className="p-4 text-right font-black text-emerald-600">{formatMoney(r.tot)}</td>
+                            <tbody className="divide-y divide-slate-50">
+                                {results.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={5} className="p-12 text-center text-slate-400 font-bold italic uppercase tracking-widest text-[10px]">No hay registros en esta categoría</td>
                                     </tr>
-                                ))}
+                                ) : (
+                                    results.map((r, i) => (
+                                        <tr key={i} className="hover:bg-slate-50 transition-colors group">
+                                            <td className="p-6 font-bold text-slate-500">{r.fec || r.emissionDate ? format(new Date(r.fec || r.emissionDate), 'dd/MM HH:mm') : '-'}</td>
+                                            <td className="p-6"><span className="font-mono font-black text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg text-[10px]">{r.cod || r.number || r.codification || 'S/N'}</span></td>
+                                            <td className="p-6 font-bold text-slate-900 truncate max-w-[250px]">{r.cli || r.supplier?.name || (r.healthInsuranceProvider?.name || r.entity?.name) || 'Particular'}</td>
+                                            <td className="p-6 text-right font-black text-slate-900">{formatMoney(r.tot || r.totalAmount || r.mainAmount)}</td>
+                                            <td className="p-6 text-center">
+                                                <button onClick={() => { setAuditResult(r); setShowInspector(true); }} className="p-2.5 bg-slate-100 rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all shadow-sm group-hover:shadow-md"><Eye className="w-4 h-4" /></button>
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
                             </tbody>
                         </table>
                     </div>
                 </div>
             )}
 
+            {/* MODAL INSPECTOR JSON CRUDA */}
+            {showInspector && auditResult && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/90 backdrop-blur-md animate-in fade-in duration-300">
+                    <div className="bg-white w-full max-w-5xl max-h-[90vh] rounded-[40px] overflow-hidden flex flex-col shadow-2xl scale-in-center">
+                        <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                            <div className="flex items-center gap-4">
+                                <div className="p-3 bg-slate-900 rounded-2xl text-emerald-400 shadow-xl">
+                                    <FileJson className="w-6 h-6" />
+                                </div>
+                                <div>
+                                    <h3 className="font-black text-slate-900 text-lg uppercase tracking-tight">Estructura Zetti Cruda</h3>
+                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1 italic">Este es el objeto exacto que responde la API por túnel</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setShowInspector(false)} className="p-3 bg-slate-100 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-2xl transition-all"><X className="w-6 h-6" /></button>
+                        </div>
+                        <div className="flex-1 overflow-auto p-10 bg-[#0d1117] custom-scrollbar">
+                            <pre className="text-emerald-400 font-mono text-xs leading-relaxed selection:bg-emerald-500/30">
+                                {JSON.stringify(auditResult, null, 2)}
+                            </pre>
+                        </div>
+                        <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end">
+                            <button onClick={() => setShowInspector(false)} className="px-8 py-3 bg-slate-900 text-white font-black text-xs rounded-2xl hover:bg-slate-800 transition-all shadow-xl shadow-slate-900/20">ENTENDIDO</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {status === 'error' && (
-                <div className="bg-red-50 p-6 rounded-3xl border border-red-100 flex items-start gap-4">
-                    <AlertCircle className="w-6 h-6 text-red-500" />
+                <div className="bg-red-50 p-8 rounded-[32px] border border-red-100 flex items-start gap-6 animate-in slide-in-from-top-4">
+                    <div className="p-3 bg-red-100 rounded-2xl"><AlertCircle className="w-6 h-6 text-red-600" /></div>
                     <div>
-                        <h4 className="font-bold text-red-900">Error de conexión</h4>
-                        <p className="text-xs text-red-700 mt-1">{error}</p>
+                        <h4 className="font-black text-red-900 uppercase text-sm tracking-tight">Falla crítica en la captura</h4>
+                        <p className="text-xs text-red-700 mt-1 font-medium leading-relaxed">{error}</p>
                     </div>
                 </div>
             )}

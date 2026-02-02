@@ -4,15 +4,18 @@ import { formatMoney } from '../utils/dataHelpers';
 import {
     Wallet, Search, ArrowUpRight, ArrowDownLeft,
     Calendar, User, Filter, Download, Info,
-    AlertCircle, CheckCircle, Clock
+    AlertCircle, CheckCircle, Clock, Trash2
 } from 'lucide-react';
 import { format, isWithinInterval } from 'date-fns';
 
 interface Props {
     data: CurrentAccountRecord[];
+    onUpload?: (e: React.ChangeEvent<HTMLInputElement>) => void;
+    onClear?: () => void;
 }
 
-export const CurrentAccountDashboard: React.FC<Props> = ({ data }) => {
+export const CurrentAccountDashboard: React.FC<Props> = ({ data, onUpload, onClear }) => {
+    const fileInputRef = React.useRef<HTMLInputElement>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedEntity, setSelectedEntity] = useState('all');
     const [selectedBranch, setSelectedBranch] = useState('all');
@@ -246,6 +249,34 @@ export const CurrentAccountDashboard: React.FC<Props> = ({ data }) => {
                         <h3 className="font-bold text-gray-800 text-lg">Movimientos de Cuenta Corriente</h3>
                     </div>
                     <div className="flex items-center gap-2">
+                        {onUpload && (
+                            <>
+                                <input
+                                    type="file"
+                                    ref={fileInputRef}
+                                    onChange={onUpload}
+                                    accept=".csv,.txt"
+                                    className="hidden"
+                                />
+                                <button
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className="flex items-center gap-2 px-4 py-1.5 bg-blue-600 text-white text-xs font-bold rounded-full hover:bg-blue-700 transition-all shadow-lg shadow-blue-200"
+                                >
+                                    <Download className="w-3.5 h-3.5" />
+                                    IMPORTAR CUENTAS (CSV)
+                                </button>
+                            </>
+                        )}
+                        {onClear && data.length > 0 && (
+                            <button
+                                onClick={onClear}
+                                className="flex items-center gap-2 px-4 py-1.5 bg-red-50 text-red-600 text-xs font-bold rounded-full hover:bg-red-100 transition-all"
+                                title="Borrar toda esta sección"
+                            >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                LIMPIAR
+                            </button>
+                        )}
                         <span className="text-xs font-bold text-gray-500 bg-gray-100 px-3 py-1 rounded-full border border-gray-200 uppercase tracking-tighter">
                             {filteredData.length} movimientos
                         </span>

@@ -1,9 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { InsuranceRecord, ExpenseItem } from '../types';
-import {
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-    AreaChart, Area
-} from 'recharts';
+// Recharts purged
 import { formatMoney } from '../utils/dataHelpers';
 import {
     ShieldCheck, Calendar, Filter, Search, ChevronDown, ChevronRight,

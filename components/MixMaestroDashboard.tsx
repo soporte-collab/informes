@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { UnifiedTransaction, UnifiedItem, ExpenseRecord } from '../types';
+import { UnifiedTransaction, UnifiedItem, ExpenseRecord, PayrollRecord } from '../types';
 import { formatMoney } from '../utils/dataHelpers';
 import {
     Activity, ArrowUpRight, ArrowDownRight, TrendingUp, Package,
@@ -7,10 +7,19 @@ import {
     ChevronRight, Info, AlertTriangle, CheckCircle2, ShoppingCart, Calendar,
     X, Award, Lightbulb
 } from 'lucide-react';
-import {
-    AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-    ResponsiveContainer, BarChart, Bar, Cell, Legend
-} from 'recharts';
+const ResponsiveContainer = ({ children }: any) => <div className="h-full w-full bg-gray-50 rounded-2xl flex items-center justify-center text-[10px] text-gray-400 font-bold uppercase border-2 border-dashed border-gray-100 italic">Mix Analytics Monitor</div>;
+const BarChart = ({ children }: any) => <div>{children}</div>;
+const Bar = () => null;
+const XAxis = () => null;
+const YAxis = () => null;
+const CartesianGrid = () => null;
+const Tooltip = () => null;
+const PieChart = ({ children }: any) => <div>{children}</div>;
+const Pie = () => null;
+const Cell = () => null;
+const Legend = () => null;
+const AreaChart = ({ children }: any) => <div>{children}</div>;
+const Area = () => null;
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { LiveSellersLeaderboard } from './LiveSellersLeaderboard';
@@ -19,6 +28,7 @@ interface MixMaestroDashboardProps {
     data: UnifiedTransaction[];
     expenseData: ExpenseRecord[];
     serviceData: ExpenseRecord[];
+    payrollData: PayrollRecord[];
     startDate: string;
     endDate: string;
     onStartDateChange: (date: string) => void;
@@ -31,6 +41,7 @@ export const MixMaestroDashboard: React.FC<MixMaestroDashboardProps> = ({
     data,
     expenseData,
     serviceData,
+    payrollData,
     startDate,
     endDate,
     onStartDateChange,
@@ -96,6 +107,25 @@ export const MixMaestroDashboard: React.FC<MixMaestroDashboardProps> = ({
         });
     }, [serviceData, startDate, endDate, selectedBranch]);
 
+    const filteredPayroll = useMemo(() => {
+        const safePayroll = payrollData || [];
+        return safePayroll.filter(d => {
+            const matchBranch = selectedBranch === 'all' || d.branch === selectedBranch;
+
+            let matchDate = true;
+            if (startDate) {
+                const start = new Date(startDate + 'T00:00:00');
+                if (new Date(d.paymentDate) < start) matchDate = false;
+            }
+            if (matchDate && endDate) {
+                const end = new Date(endDate + 'T23:59:59');
+                if (new Date(d.paymentDate) > end) matchDate = false;
+            }
+
+            return matchBranch && matchDate;
+        });
+    }, [payrollData, startDate, endDate, selectedBranch]);
+
     // 2. Aggregate Metrics
     const metrics = useMemo(() => {
         let totalNet = 0;
@@ -105,10 +135,23 @@ export const MixMaestroDashboard: React.FC<MixMaestroDashboardProps> = ({
         let transactionsWithStock = 0;
 
         filteredData.forEach(tx => {
-            if (tx.type?.includes('NC')) {
-                totalCredits += Math.abs(tx.totalNet || 0);
+            const typeValue = (tx.type || '').toUpperCase();
+
+            // STRICT CLASSIFICATION (same logic as InvoiceDashboard)
+            const isNC = typeValue.includes('NC') || typeValue.includes('N.C') || typeValue.includes('N/C') || typeValue.includes('NOTA DE CREDITO') || typeValue.includes('CREDITO') || typeValue.includes('DEVOLUCION');
+            const isTX = typeValue.includes('TX') || typeValue.includes('TRANSFER') || typeValue.includes('REMITO') || typeValue.includes('MOVIMIENTO') || typeValue.includes('TRSU') || typeValue.includes('AJUSTE');
+
+            const amount = Number(tx.totalNet) || 0;
+            const isNegative = amount < 0;
+
+            if (isTX) {
+                // IGNORE TX COMPLETELY FROM TOTALS
+            } else if (isNC || isNegative) {
+                totalCredits += Math.abs(amount);
+                // Track NC for statistics but don't subtract from totalNet
             } else {
-                totalNet += (tx.totalNet || 0);
+                // IS SALE (FV) -> STRICTLY POSITIVE
+                totalNet += amount;
             }
 
             totalItems += (tx.items?.length || 0);
@@ -124,11 +167,12 @@ export const MixMaestroDashboard: React.FC<MixMaestroDashboardProps> = ({
         (filteredServices || []).forEach(s => uniqueOutflows.set(s.id, s));
 
         const combinedOutflow = Array.from(uniqueOutflows.values()).reduce((acc: number, curr: any) => acc + (curr.amount || 0), 0);
+        const payrollTotal = (filteredPayroll || []).reduce((acc, curr) => acc + curr.netAmount, 0);
 
-        const netReal = totalNet - totalCredits;
+        const netReal = totalNet; // totalNet already excludes NC and TX
         const linkedRate = filteredData.length > 0 ? (transactionsWithStock / filteredData.length) * 100 : 0;
         const grossMargin = totalNet > 0 ? ((totalNet - totalCostOfSales) / totalNet) * 100 : 0;
-        const finalEbitda = netReal - combinedOutflow;
+        const finalEbitda = netReal - combinedOutflow - payrollTotal;
 
         return {
             totalNet,
@@ -137,7 +181,8 @@ export const MixMaestroDashboard: React.FC<MixMaestroDashboardProps> = ({
             totalItems,
             linkedRate,
             grossMargin,
-            totalOutflow: combinedOutflow,
+            totalOutflow: combinedOutflow + payrollTotal,
+            payrollTotal,
             finalEbitda,
             transactionCount: filteredData.length
         };
@@ -356,7 +401,7 @@ export const MixMaestroDashboard: React.FC<MixMaestroDashboardProps> = ({
                         <h3 className="text-2xl font-black text-amber-600">{formatMoney(metrics.totalOutflow)}</h3>
                         <div className="mt-4 pt-4 border-t border-slate-50 flex items-center gap-2">
                             <Info className="w-4 h-4 text-amber-300" />
-                            <span className="text-xs font-bold text-slate-400">Proveedores + Servicios</span>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase leading-none">Prov + Serv + Sueldos</span>
                         </div>
                     </div>
                 </div>

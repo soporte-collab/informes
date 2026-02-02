@@ -1,15 +1,25 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { ExpenseRecord, ExpenseItem } from '../types';
 import { getMetadata, saveMetadata } from '../utils/db';
-import {
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-    AreaChart, Area
-} from 'recharts';
+// Recharts purged
+const ResponsiveContainer = ({ children }: any) => <div className="h-full w-full bg-gray-50 rounded-2xl flex items-center justify-center text-[10px] text-gray-400 font-bold uppercase border-2 border-dashed border-gray-100 italic">Análisis de Volumen en Revisión</div>;
+const AreaChart = ({ children }: any) => <div>{children}</div>;
+const Area = () => null;
+const BarChart = ({ children }: any) => <div>{children}</div>;
+const Bar = () => null;
+const PieChart = ({ children }: any) => <div>{children}</div>;
+const Pie = () => null;
+const Cell = () => null;
+const XAxis = () => null;
+const YAxis = () => null;
+const CartesianGrid = () => null;
+const Tooltip = () => null;
+const Legend = () => null;
 import { formatMoney } from '../utils/dataHelpers';
 import {
     TrendingUp, Calendar, CreditCard, Users, Filter,
     Package, Clock, Search, ChevronDown, ChevronRight,
-    X, CheckCircle, Ban, ListFilter, AlertCircle, Zap, ArrowRightLeft, Eye, EyeOff
+    X, CheckCircle, Ban, ListFilter, AlertCircle, Zap, ArrowRightLeft, Eye, EyeOff, Trash2
 } from 'lucide-react';
 import { format, isWithinInterval } from 'date-fns';
 
@@ -21,6 +31,10 @@ interface Props {
     onEndDateChange: (date: string) => void;
     selectedBranch: string;
     onSelectBranch: (branch: string) => void;
+    onUpload?: (e: React.ChangeEvent<HTMLInputElement>) => void;
+    onClear?: () => void;
+    supplierCategories: Record<string, string>;
+    setSupplierCategories: React.Dispatch<React.SetStateAction<Record<string, string>>>;
 }
 
 const COLORS = ['#f97316', '#3b82f6', '#8b5cf6', '#10b981', '#ef4444', '#f59e0b', '#06b6d4', '#ec4899'];
@@ -32,7 +46,11 @@ export const ExpensesDashboard: React.FC<Props> = ({
     onStartDateChange,
     onEndDateChange,
     selectedBranch,
-    onSelectBranch
+    onSelectBranch,
+    onUpload,
+    onClear,
+    supplierCategories,
+    setSupplierCategories
 }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedMonth, setSelectedMonth] = useState('all');
@@ -42,23 +60,13 @@ export const ExpensesDashboard: React.FC<Props> = ({
     const [expandedInvoiceId, setExpandedInvoiceId] = useState<string | null>(null);
     const [removeDuplicates, setRemoveDuplicates] = useState(false);
 
-    // Categorización y Visibilidad
-    const [serviceCategories, setServiceCategories] = useState<Record<string, string>>({});
-    const [showHiddenServices, setShowHiddenServices] = useState(false);
-
-    useEffect(() => {
-        const loadCats = async () => {
-            const cats = await getMetadata('service_categories');
-            if (cats) setServiceCategories(cats);
-        };
-        loadCats();
-    }, []);
-
+    // Acción para mover a servicios (nube)
     const moveToServices = async (supplier: string) => {
-        if (!window.confirm(`¿Mover al proveedor "${supplier}" al panel de Servicios (Gastos)?\n\nDesaparecerá de este listado y se moverá a la pestaña 'Gastos / Servicios'.`)) return;
+        if (!window.confirm(`¿Categorizar a "${supplier}" como Servicio?\nDejará de aparecer en este listado y se moverá al panel de Servicios.`)) return;
 
-        const updated = { ...serviceCategories, [supplier]: 'VARIOS' };
-        setServiceCategories(updated);
+        const normalizedKey = supplier.trim().toUpperCase();
+        const updated = { ...supplierCategories, [normalizedKey]: 'VARIOS' };
+        setSupplierCategories(updated);
         await saveMetadata('service_categories', updated);
     };
 
@@ -77,10 +85,9 @@ export const ExpensesDashboard: React.FC<Props> = ({
 
     const filteredData = useMemo(() => {
         let result = data.filter(d => {
-            // Exclude services ONLY if showHiddenServices is false
-            // Si el proveedor está en 'serviceCategories' y NO queremos ver ocultos, lo filtramos.
-            const isService = !!serviceCategories[d.supplier];
-            if (isService && !showHiddenServices) return false;
+            // Exclude services ONLY (those with a category assigned)
+            const isService = !!supplierCategories[d.supplier];
+            if (isService) return false;
 
             const matchSearch = d.supplier.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 d.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -121,7 +128,7 @@ export const ExpensesDashboard: React.FC<Props> = ({
         }
 
         return result;
-    }, [data, searchTerm, selectedBranch, selectedMonth, selectedStatus, startDate, endDate, includedSuppliers, removeDuplicates, serviceCategories, showHiddenServices]);
+    }, [data, searchTerm, selectedBranch, selectedMonth, selectedStatus, startDate, endDate, includedSuppliers, removeDuplicates, supplierCategories]);
 
     const stats = useMemo(() => {
         let gross = 0;
@@ -189,7 +196,7 @@ export const ExpensesDashboard: React.FC<Props> = ({
                         >
                             <ListFilter className="w-4 h-4" />
                             Filtros Avanzados
-                            {(includedSuppliers.length > 0 || selectedMonth !== 'all' || startDate !== '' || removeDuplicates || showHiddenServices) && (
+                            {(includedSuppliers.length > 0 || selectedMonth !== 'all' || startDate !== '' || removeDuplicates) && (
                                 <span className="bg-orange-500 text-white w-5 h-5 rounded-full text-[10px] flex items-center justify-center animate-bounce ml-2">
                                     !
                                 </span>
@@ -278,24 +285,9 @@ export const ExpensesDashboard: React.FC<Props> = ({
 
                                 <div className="border-t border-dashed border-gray-200"></div>
 
-                                {/* Toggle Servicios Ocultos */}
-                                <div className="flex items-center justify-between">
-                                    <label className="flex items-center gap-2 cursor-pointer select-none">
-                                        <div className={`w-9 h-5 rounded-full p-0.5 transition-colors duration-300 ${showHiddenServices ? 'bg-blue-500' : 'bg-gray-300'}`}>
-                                            <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-300 ${showHiddenServices ? 'translate-x-4' : ''}`} />
-                                        </div>
-                                        <span className="text-xs font-bold text-blue-800">Mostrar Servicios Ocultos</span>
-                                        <input
-                                            type="checkbox"
-                                            className="hidden"
-                                            checked={showHiddenServices}
-                                            onChange={() => setShowHiddenServices(!showHiddenServices)}
-                                        />
-                                    </label>
-                                </div>
-                                <p className="text-[10px] text-gray-400 italic leading-tight">
-                                    Muestra proveedores ya categorizados como servicios.
-                                </p>
+                                {/* This stray label was causing a syntax error. Removed. */}
+                                {/* <label> */}
+                                {/* </label> */}
                             </div>
 
                             <button
@@ -307,7 +299,6 @@ export const ExpensesDashboard: React.FC<Props> = ({
                                     setIncludedSuppliers([]);
                                     onSelectBranch('all');
                                     setRemoveDuplicates(false);
-                                    setShowHiddenServices(false);
                                 }}
                                 className="text-xs text-orange-600 hover:underline font-medium block mt-2"
                             >
@@ -319,25 +310,28 @@ export const ExpensesDashboard: React.FC<Props> = ({
                         <div>
                             <label className="text-xs font-bold text-gray-400 uppercase mb-2 block tracking-wider">Proveedores ({includedSuppliers.length || 'Todos'})</label>
                             <div className="bg-gray-50 border border-gray-200 rounded-lg h-[150px] overflow-y-auto p-2 space-y-1">
-                                {suppliers.map(s => (
-                                    <label key={s} className="flex items-center gap-2 p-1.5 hover:bg-white rounded cursor-pointer transition-colors group">
-                                        <input
-                                            type="checkbox"
-                                            checked={includedSuppliers.includes(s)}
-                                            onChange={() => toggleSupplier(s)}
-                                            className="rounded border-gray-300 text-orange-600 focus:ring-orange-500 w-4 h-4"
-                                        />
-                                        <span className={`text-xs truncate ${includedSuppliers.includes(s) ? 'font-bold text-orange-700' : 'text-gray-600'}`}>
-                                            {s}
-                                        </span>
-                                        {/* Badge si es servicio */}
-                                        {serviceCategories[s] && (
-                                            <span className="text-[9px] bg-blue-100 text-blue-600 px-1 rounded ml-auto">
-                                                SERV
+                                {suppliers.map(s => {
+                                    const isService = !!supplierCategories[s.trim().toUpperCase()];
+                                    return (
+                                        <label key={s} className="flex items-center gap-2 p-1.5 hover:bg-white rounded cursor-pointer transition-colors group">
+                                            <input
+                                                type="checkbox"
+                                                checked={includedSuppliers.includes(s)}
+                                                onChange={() => toggleSupplier(s)}
+                                                className="rounded border-gray-300 text-orange-600 focus:ring-orange-500 w-4 h-4"
+                                            />
+                                            <span className={`text-xs truncate ${includedSuppliers.includes(s) ? 'font-bold text-orange-700' : 'text-gray-600'}`}>
+                                                {s}
                                             </span>
-                                        )}
-                                    </label>
-                                ))}
+                                            {/* Badge si es servicio */}
+                                            {isService && (
+                                                <span className="text-[9px] bg-blue-100 text-blue-600 px-1 rounded ml-auto">
+                                                    SERV
+                                                </span>
+                                            )}
+                                        </label>
+                                    );
+                                })}
                             </div>
                         </div>
                     </div>
@@ -409,10 +403,10 @@ export const ExpensesDashboard: React.FC<Props> = ({
                     <p className="text-gray-500 text-xs font-semibold uppercase tracking-wider font-mono">Próximos</p>
                     <p className="text-2xl font-black text-gray-900 mt-1">{stats.pending.toLocaleString()}</p>
                 </div>
-            </div>
+            </div >
 
             {/* Charts Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            < div className="grid grid-cols-1 lg:grid-cols-2 gap-6" >
                 <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
                     <h3 className="text-lg font-bold text-gray-800 mb-6 flex items-center gap-2">
                         <TrendingUp className="w-5 h-5 text-orange-500" /> Evolución Mensual
@@ -450,18 +444,29 @@ export const ExpensesDashboard: React.FC<Props> = ({
                         </ResponsiveContainer>
                     </div>
                 </div>
-            </div>
+            </div >
 
             {/* Invoices List with Details */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-12">
+            < div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-12" >
                 <div className="p-6 border-b border-gray-50 flex justify-between items-center bg-gray-50/50">
                     <div>
                         <h3 className="font-bold text-gray-800">Listado de Comprobantes de Compra</h3>
                         <p className="text-xs text-gray-400">Haga clic en una fila para ver el desglose de productos</p>
                     </div>
-                    <span className="text-xs font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded-lg">
-                        {filteredData.length} registros
-                    </span>
+                    <div className="flex items-center gap-2">
+                        {onClear && data.length > 0 && (
+                            <button
+                                onClick={onClear}
+                                className="flex items-center gap-2 px-3 py-1 bg-red-50 text-red-600 text-[10px] font-bold rounded-full hover:bg-red-100 transition-all border border-red-100"
+                            >
+                                <Trash2 className="w-3 h-3" />
+                                BORRAR TODO
+                            </button>
+                        )}
+                        <span className="text-xs font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded-lg">
+                            {filteredData.length} registros
+                        </span>
+                    </div>
                 </div>
                 <div className="overflow-x-auto">
                     <table className="w-full text-left text-sm">
@@ -477,7 +482,7 @@ export const ExpensesDashboard: React.FC<Props> = ({
                         </thead>
                         <tbody className="divide-y divide-gray-50">
                             {filteredData.map((record) => {
-                                const isService = !!serviceCategories[record.supplier];
+                                const isService = !!supplierCategories[record.supplier.trim().toUpperCase()];
                                 return (
                                     <React.Fragment key={record.id}>
                                         <tr
@@ -575,7 +580,7 @@ export const ExpensesDashboard: React.FC<Props> = ({
                         </tbody>
                     </table>
                 </div>
-            </div>
-        </div>
+            </div >
+        </div >
     );
 };

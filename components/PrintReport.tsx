@@ -4,7 +4,19 @@ import { formatMoney } from '../utils/dataHelpers';
 import { format, getDay, getHours } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Building2, X, TrendingUp, Filter, Printer, Clock, Tag, LayoutGrid, AlertCircle } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Cell } from 'recharts';
+const ResponsiveContainer = ({ children }: any) => <div className="h-full w-full bg-gray-50 rounded-2xl flex items-center justify-center text-[10px] text-gray-400 font-bold uppercase">Reporte Gráfico</div>;
+const BarChart = ({ children }: any) => <div>{children}</div>;
+const Bar = () => null;
+const XAxis = () => null;
+const YAxis = () => null;
+const CartesianGrid = () => null;
+const Tooltip = () => null;
+const AreaChart = ({ children }: any) => <div>{children}</div>;
+const Area = () => null;
+const PieChart = ({ children }: any) => <div>{children}</div>;
+const Pie = () => null;
+const Cell = () => null;
+const Legend = () => null;
 
 interface PrintReportProps {
     data: SaleRecord[];

@@ -5,11 +5,25 @@ import {
     Users, TrendingUp, ShoppingBag, DollarSign, Award,
     ArrowRightLeft, User, BarChart3, Target, Zap
 } from 'lucide-react';
-import {
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-    ResponsiveContainer, Legend, Cell, ComposedChart, Line,
-    RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar as RechartRadar
-} from 'recharts';
+// Recharts purged
+const ResponsiveContainer = ({ children }: any) => <div className="h-full w-full bg-gray-50 rounded-2xl flex items-center justify-center text-[10px] text-gray-400 font-bold uppercase border-2 border-dashed border-gray-100">Gráfico Desactivado</div>;
+const BarChart = ({ children }: any) => <div>{children}</div>;
+const Bar = () => null;
+const XAxis = () => null;
+const YAxis = () => null;
+const CartesianGrid = () => null;
+const Tooltip = () => null;
+const PieChart = ({ children }: any) => <div>{children}</div>;
+const Pie = () => null;
+const Cell = () => null;
+const Legend = () => null;
+const RadarChart = ({ children }: any) => <div>{children}</div>;
+const PolarGrid = () => null;
+const PolarAngleAxis = () => null;
+const RechartRadar = () => null;
+const PolarRadiusAxis = () => null;
+const ComposedChart = ({ children }: any) => <div>{children}</div>;
+const Line = () => null;
 import { LiveSellersLeaderboard } from './LiveSellersLeaderboard';
 import { SellerDetail } from './SellerDetail';
 

@@ -1,6 +1,6 @@
 import { db, auth, storage } from '../src/firebaseConfig';
 import { ref, uploadString, getDownloadURL, deleteObject } from 'firebase/storage';
-import { SaleRecord, InvoiceRecord, ExpenseRecord, CurrentAccountRecord, InsuranceRecord, StockRecord, UnifiedTransaction } from '../types';
+import { SaleRecord, InvoiceRecord, ExpenseRecord, CurrentAccountRecord, InsuranceRecord, StockRecord, UnifiedTransaction, Employee, PayrollRecord } from '../types';
 
 const SHARED_PATH_PREFIX = 'reports_data';
 
@@ -177,6 +177,7 @@ export const saveServicesToDB = async (
 
 export const getAllServicesFromDB = async (): Promise<ExpenseRecord[]> => {
   const rawData = await loadJsonFromStorage('services.json');
+  if (!Array.isArray(rawData)) return [];
   return rawData.map((item: any) => ({
     ...item,
     issueDate: new Date(item.issueDate),
@@ -253,6 +254,26 @@ export const saveMetadata = async (docId: string, data: any): Promise<void> => {
   await saveJsonToStorage(data, `meta_${docId}.json`);
 };
 
+// --- PAYROLL FUNCTIONS ---
+
+export const saveEmployeesToDB = async (employees: Employee[]): Promise<void> => {
+  await saveJsonToStorage(employees, 'employees.json');
+};
+
+export const getAllEmployeesFromDB = async (): Promise<Employee[]> => {
+  const rawData = await loadJsonFromStorage('employees.json');
+  return Array.isArray(rawData) ? rawData : [];
+};
+
+export const savePayrollToDB = async (payroll: PayrollRecord[]): Promise<void> => {
+  await saveJsonToStorage(payroll, 'payroll.json');
+};
+
+export const getAllPayrollFromDB = async (): Promise<PayrollRecord[]> => {
+  const rawData = await loadJsonFromStorage('payroll.json');
+  return Array.isArray(rawData) ? rawData : [];
+};
+
 // --- GENERAL UTILS ---
 
 export const clearDB = async (): Promise<void> => {
@@ -260,28 +281,71 @@ export const clearDB = async (): Promise<void> => {
     const user = auth.currentUser;
     if (!user) return; // Can't clear if not logged in
 
-    const salesRef = ref(storage, `${SHARED_PATH_PREFIX}/sales.json`);
-    const invRef = ref(storage, `${SHARED_PATH_PREFIX}/invoices.json`);
-    const expRef = ref(storage, `${SHARED_PATH_PREFIX}/expenses.json`);
-    const curRef = ref(storage, `${SHARED_PATH_PREFIX}/current_accounts.json`);
-    const serRef = ref(storage, `${SHARED_PATH_PREFIX}/services.json`);
-    const insRef = ref(storage, `${SHARED_PATH_PREFIX}/insurance.json`);
-    const stockRef = ref(storage, `${SHARED_PATH_PREFIX}/stock.json`);
-    const metaSerRef = ref(storage, `${SHARED_PATH_PREFIX}/meta_service_categories.json`);
+    const files = [
+      'sales.json', 'invoices.json', 'expenses.json', 'current_accounts.json',
+      'services.json', 'insurance.json', 'stock.json', 'meta_service_categories.json',
+      'unified.json', 'product_master.json', 'employees.json', 'payroll.json'
+    ];
 
-    // Try deleting, ignore if not found
-    try { await deleteObject(salesRef); } catch (e) { }
-    try { await deleteObject(invRef); } catch (e) { }
-    try { await deleteObject(expRef); } catch (e) { }
-    try { await deleteObject(curRef); } catch (e) { }
-    try { await deleteObject(serRef); } catch (e) { }
-    try { await deleteObject(insRef); } catch (e) { }
-    try { await deleteObject(stockRef); } catch (e) { }
-    try { await deleteObject(metaSerRef); } catch (e) { }
+    await Promise.all(files.map(async (file) => {
+      try {
+        const fileRef = ref(storage, `${SHARED_PATH_PREFIX}/${file}`);
+        await deleteObject(fileRef);
+      } catch (e) { /* ignore if not found */ }
+    }));
   } catch (error) {
     console.error("Error clearing storage:", error);
     throw error;
   }
+};
+
+export const clearSalesDB = async () => {
+  try {
+    const fileRef = ref(storage, `${SHARED_PATH_PREFIX}/sales.json`);
+    await deleteObject(fileRef);
+  } catch (e) { console.error("Error al borrar ventas:", e); }
+};
+
+export const clearInvoicesDB = async () => {
+  try {
+    const fileRef = ref(storage, `${SHARED_PATH_PREFIX}/invoices.json`);
+    await deleteObject(fileRef);
+  } catch (e) { console.error("Error al borrar facturas:", e); }
+};
+
+export const clearExpensesDB = async () => {
+  try {
+    const fileRef = ref(storage, `${SHARED_PATH_PREFIX}/expenses.json`);
+    await deleteObject(fileRef);
+  } catch (e) { console.error("Error al borrar gastos:", e); }
+};
+
+export const clearCurrentAccountsDB = async () => {
+  try {
+    const fileRef = ref(storage, `${SHARED_PATH_PREFIX}/current_accounts.json`);
+    await deleteObject(fileRef);
+  } catch (e) { console.error("Error al borrar cuentas corrientes:", e); }
+};
+
+export const clearServicesDB = async () => {
+  try {
+    const fileRef = ref(storage, `${SHARED_PATH_PREFIX}/services.json`);
+    await deleteObject(fileRef);
+  } catch (e) { console.error("Error al borrar servicios:", e); }
+};
+
+export const clearInsuranceDB = async () => {
+  try {
+    const fileRef = ref(storage, `${SHARED_PATH_PREFIX}/insurance.json`);
+    await deleteObject(fileRef);
+  } catch (e) { console.error("Error al borrar seguros/obras sociales:", e); }
+};
+
+export const clearStockDB = async () => {
+  try {
+    const fileRef = ref(storage, `${SHARED_PATH_PREFIX}/stock.json`);
+    await deleteObject(fileRef);
+  } catch (e) { console.error("Error al borrar stock:", e); }
 };
 
 // --- PURGE BY DATE FUNCTIONS ---

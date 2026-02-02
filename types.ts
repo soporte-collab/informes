@@ -37,7 +37,7 @@ export interface SaleRecord {
   entity: string; // Changed from client to entity for broader filtering
   paymentMethod?: string; // Derived from Invoice
   barcode?: string;
-  cost?: number;
+  unitCost?: number;
   stockBalance?: number;
 }
 
@@ -256,4 +256,38 @@ export interface UniversalSyncResult {
   insurance: InsuranceRecord[];
   currentAccounts: CurrentAccountRecord[];
   stock: StockRecord[];
+}
+
+// --- NEW TYPES FOR PAYROLL (SUELDOS) ---
+
+export interface Employee {
+  id: string;
+  name: string;
+  cuil: string;
+  position: string;
+  startDate: string; // Date string
+  branch: string;
+  status: 'active' | 'inactive';
+  baseSalary?: number;
+  bankInfo?: string;
+}
+
+export interface PayrollConcept {
+  name: string;
+  amount: number;
+  type: 'earning' | 'deduction';
+}
+
+export interface PayrollRecord {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  branch: string;
+  periodStart: string;
+  periodEnd: string;
+  paymentDate: string;
+  netAmount: number;
+  concepts: PayrollConcept[];
+  observations?: string;
+  monthYear: string; // "YYYY-MM"
 }
