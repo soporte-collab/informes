@@ -1,11 +1,11 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { Employee, PayrollRecord, PayrollConcept } from '../types';
-import { getAllEmployeesFromDB, saveEmployeesToDB, getAllPayrollFromDB, savePayrollToDB } from '../utils/db';
+import { getAllEmployeesFromDB, saveEmployeesToDB, getAllPayrollFromDB, savePayrollToDB, getAllAttendanceFromDB, saveAttendanceToDB } from '../utils/db';
 import { formatMoney } from '../utils/dataHelpers';
 import {
     Users, Wallet, Plus, Trash2, Edit2, Search,
     Calendar, Building2, Briefcase, FileText, ChevronRight,
-    Save, X, CreditCard, TrendingUp, AlertCircle
+    Save, X, CreditCard, TrendingUp, AlertCircle, Clock
 } from 'lucide-react';
 import { format, isWithinInterval } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -25,9 +25,12 @@ export const PayrollDashboard: React.FC<Props> = ({
 }) => {
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [payroll, setPayroll] = useState<PayrollRecord[]>([]);
-    const [activeTab, setActiveTab] = useState<'payroll' | 'employees'>('payroll');
+    const [activeTab, setActiveTab] = useState<'payroll' | 'hr'>('payroll');
+    const [hrSubTab, setHrSubTab] = useState<'employees' | 'attendance' | 'efficiency'>('employees');
     const [searchTerm, setSearchTerm] = useState('');
     const [isLoading, setIsLoading] = useState(true);
+    const [attendance, setAttendance] = useState<any[]>([]);
+    const [selectedEmployeeForAttendance, setSelectedEmployeeForAttendance] = useState<string>('all');
 
     // Form States
     const [showEmployeeForm, setShowEmployeeForm] = useState(false);
@@ -46,13 +49,90 @@ export const PayrollDashboard: React.FC<Props> = ({
 
     const loadData = async () => {
         setIsLoading(true);
-        const [empData, payData] = await Promise.all([
+        const [empData, payData, attData] = await Promise.all([
             getAllEmployeesFromDB(),
-            getAllPayrollFromDB()
+            getAllPayrollFromDB(),
+            getAllAttendanceFromDB()
         ]);
         setEmployees(empData);
         setPayroll(payData);
+        setAttendance(attData);
         setIsLoading(false);
+    };
+
+    const handleAttendanceImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = e.target.files;
+        if (!files || files.length === 0) return;
+
+        const XLSX = await import('xlsx');
+        setIsLoading(true);
+        const allNewRecords: any[] = [];
+
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            const reader = new FileReader();
+
+            await new Promise<void>((resolve) => {
+                reader.onload = async (evt) => {
+                    const bstr = evt.target?.result;
+                    const wb = XLSX.read(bstr, { type: 'binary' });
+                    const wsname = wb.SheetNames[0];
+                    const ws = wb.Sheets[wsname];
+                    const data = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+
+                    // Intentar deducir el nombre del empleado del nombre del archivo (ej: "ALEXIS ENERO.xls")
+                    const empName = file.name.split(' ')[0].toUpperCase();
+                    const employee = employees.find(e => e.name.toUpperCase().includes(empName));
+
+                    // Mapeo rústico basado en lo visto en Get-Content
+                    // Buscamos la fila donde empieza la data (después de "Fecha", "Entrada 1", etc.)
+                    let startRow = -1;
+                    for (let r = 0; r < data.length; r++) {
+                        if (data[r].some(cell => String(cell).includes('Fecha'))) {
+                            startRow = r + 1;
+                            break;
+                        }
+                    }
+
+                    if (startRow !== -1) {
+                        for (let r = startRow; r < data.length; r++) {
+                            const row = data[r];
+                            if (!row[0]) continue; // Fecha vacía
+
+                            const dateStr = String(row[0]);
+                            // Normalizar fecha dd/mm/yyyy
+                            const attendanceRecord = {
+                                id: `${employee?.id || empName}-${dateStr}`,
+                                employeeId: employee?.id || 'manual',
+                                employeeName: employee?.name || empName,
+                                date: dateStr,
+                                entrance1: row[1] || null,
+                                exit1: row[2] || null,
+                                entrance2: row[3] || null,
+                                exit2: row[4] || null,
+                                totalMinutes: 0, // Cálculo aproximado si es necesario
+                                status: row[1] ? 'present' : 'absent',
+                            };
+                            allNewRecords.push(attendanceRecord);
+                        }
+                    }
+                    resolve();
+                };
+                reader.readAsBinaryString(file);
+            });
+        }
+
+        const updatedAttendance = [...attendance];
+        allNewRecords.forEach(nr => {
+            const idx = updatedAttendance.findIndex(a => a.id === nr.id);
+            if (idx !== -1) updatedAttendance[idx] = nr;
+            else updatedAttendance.push(nr);
+        });
+
+        setAttendance(updatedAttendance);
+        await saveAttendanceToDB(updatedAttendance);
+        setIsLoading(false);
+        alert(`✅ Sincronizados ${allNewRecords.length} registros de asistencia.`);
     };
 
     const handleSaveEmployee = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -68,6 +148,11 @@ export const PayrollDashboard: React.FC<Props> = ({
             status: formData.get('status') as 'active' | 'inactive',
             baseSalary: Number(formData.get('baseSalary')),
             bankInfo: formData.get('bankInfo') as string,
+            zettiSellerName: formData.get('zettiSellerName') as string,
+            scheduleTemplate: {
+                entrance: formData.get('entrance') as string,
+                exit: formData.get('exit') as string,
+            }
         };
 
         const updated = editingEmployee
@@ -207,93 +292,55 @@ export const PayrollDashboard: React.FC<Props> = ({
                 </div>
             </div>
 
-            {/* Tabs & Search */}
+            {/* Tabs, Search & Actions Container */}
             <div className="bg-white/40 backdrop-blur-xl p-4 rounded-[30px] border border-white shadow-xl flex flex-wrap items-center justify-between gap-4">
                 <div className="flex bg-slate-100 p-1.5 rounded-2xl">
                     <button
                         onClick={() => setActiveTab('payroll')}
-                        className={`px-6 py-2 rounded-xl text-xs font-black transition-all ${activeTab === 'payroll' ? 'bg-white text-teal-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                        className={`px-8 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'payroll' ? 'bg-white text-teal-600 shadow-sm outline outline-1 outline-teal-100' : 'text-slate-500 hover:text-slate-700'}`}
                     >
-                        LIQUIDACIONES
+                        SUELDOS
                     </button>
                     <button
-                        onClick={() => setActiveTab('employees')}
-                        className={`px-6 py-2 rounded-xl text-xs font-black transition-all ${activeTab === 'employees' ? 'bg-white text-teal-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                        onClick={() => setActiveTab('hr')}
+                        className={`px-8 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'hr' ? 'bg-white text-teal-600 shadow-sm outline outline-1 outline-teal-100' : 'text-slate-500 hover:text-slate-700'}`}
                     >
-                        EMPLEADOS
+                        RRHH
                     </button>
                 </div>
+
+                {activeTab === 'hr' && (
+                    <div className="flex bg-slate-100/50 p-1 rounded-xl border border-slate-200/50">
+                        <button onClick={() => setHrSubTab('employees')} className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tighter transition-all ${hrSubTab === 'employees' ? 'bg-teal-600 text-white shadow-lg shadow-teal-500/20' : 'text-slate-400'}`}>Legajos</button>
+                        <button onClick={() => setHrSubTab('attendance')} className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tighter transition-all ${hrSubTab === 'attendance' ? 'bg-teal-600 text-white shadow-lg shadow-teal-500/20' : 'text-slate-400'}`}>Fichadas</button>
+                        <button onClick={() => setHrSubTab('efficiency')} className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tighter transition-all ${hrSubTab === 'efficiency' ? 'bg-teal-600 text-white shadow-lg shadow-teal-500/20' : 'text-slate-400'}`}>Eficiencia ⚡</button>
+                    </div>
+                )}
 
                 <div className="flex-1 max-w-md relative">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                     <input
                         type="text"
-                        placeholder={`Buscar ${activeTab === 'payroll' ? 'liquidaciones' : 'empleados'}...`}
+                        placeholder={`Buscar en ${activeTab === 'payroll' ? 'movimientos' : 'personal'}...`}
                         className="w-full bg-white border border-slate-100 rounded-2xl py-2 pl-11 pr-4 text-sm font-medium focus:ring-2 focus:ring-teal-500/20 outline-none"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                     />
                 </div>
 
-                {activeTab === 'employees' && (
+                {activeTab === 'hr' && hrSubTab === 'employees' && (
                     <button
                         onClick={() => setShowEmployeeForm(true)}
                         className="bg-slate-900 text-white px-6 py-2.5 rounded-2xl text-xs font-black hover:bg-slate-800 transition-all flex items-center gap-2"
                     >
                         <Plus className="w-4 h-4" />
-                        GREGAR EMPLEADO
+                        AGREGAR EMPLEADO
                     </button>
                 )}
             </div>
 
             {/* Main Content Area */}
-            {activeTab === 'employees' ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {filteredEmployees.map(emp => (
-                        <div key={emp.id} className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-lg hover:shadow-xl transition-all group border-b-4 border-b-transparent hover:border-b-teal-500">
-                            <div className="flex justify-between items-start mb-4">
-                                <div className="p-3 bg-teal-50 rounded-2xl group-hover:bg-teal-100 transition-colors">
-                                    <Users className="w-6 h-6 text-teal-600" />
-                                </div>
-                                <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <button
-                                        onClick={() => { setEditingEmployee(emp); setShowEmployeeForm(true); }}
-                                        className="p-2 text-slate-400 hover:text-teal-600 transition-colors"
-                                    ><Edit2 className="w-4 h-4" /></button>
-                                    <button
-                                        onClick={() => handleDeleteEmployee(emp.id)}
-                                        className="p-2 text-slate-400 hover:text-rose-600 transition-colors"
-                                    ><Trash2 className="w-4 h-4" /></button>
-                                </div>
-                            </div>
-                            <h4 className="text-lg font-black text-slate-800 uppercase tracking-tight mb-1">{emp.name}</h4>
-                            <p className="text-xs font-bold text-slate-400 mb-4">{emp.position} • {emp.branch}</p>
-
-                            <div className="space-y-3 pt-4 border-t border-slate-50">
-                                <div className="flex justify-between items-center text-[10px] font-black uppercase text-slate-400">
-                                    <span>CUIL</span>
-                                    <span className="text-slate-600">{emp.cuil}</span>
-                                </div>
-                                <div className="flex justify-between items-center text-[10px] font-black uppercase text-slate-400">
-                                    <span>Ingreso</span>
-                                    <span className="text-slate-600">{emp.startDate}</span>
-                                </div>
-                                <div className="flex justify-between items-center text-[10px] font-black uppercase text-slate-400">
-                                    <span>Estado</span>
-                                    <span className={`px-2 py-0.5 rounded-full ${emp.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                                        {emp.status}
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-                    ))}
-                    {filteredEmployees.length === 0 && (
-                        <div className="col-span-full bg-white p-12 rounded-[40px] border border-dashed border-slate-200 text-center">
-                            <p className="text-slate-400 font-bold italic">No se encontraron empleados.</p>
-                        </div>
-                    )}
-                </div>
-            ) : (
+            {activeTab === 'payroll' ? (
                 <div className="bg-white rounded-[40px] border border-slate-100 shadow-xl overflow-hidden">
                     <div className="overflow-x-auto">
                         <table className="w-full">
@@ -348,135 +395,279 @@ export const PayrollDashboard: React.FC<Props> = ({
                         </table>
                     </div>
                 </div>
-            )}
+            ) : (
+                <div className="animate-in fade-in duration-500">
+                    {hrSubTab === 'employees' && (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {filteredEmployees.map(emp => (
+                                <div key={emp.id} className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-lg hover:shadow-xl transition-all group border-b-4 border-b-transparent hover:border-b-teal-500">
+                                    <div className="flex justify-between items-start mb-4">
+                                        <div className="p-3 bg-teal-50 rounded-2xl group-hover:bg-teal-100 transition-colors">
+                                            <Users className="w-6 h-6 text-teal-600" />
+                                        </div>
+                                        <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <button
+                                                onClick={() => { setEditingEmployee(emp); setShowEmployeeForm(true); }}
+                                                className="p-2 text-slate-400 hover:text-teal-600 transition-colors"
+                                            ><Edit2 className="w-4 h-4" /></button>
+                                            <button
+                                                onClick={() => handleDeleteEmployee(emp.id)}
+                                                className="p-2 text-slate-400 hover:text-rose-600 transition-colors"
+                                            ><Trash2 className="w-4 h-4" /></button>
+                                        </div>
+                                    </div>
+                                    <h4 className="text-lg font-black text-slate-800 uppercase tracking-tight mb-1">{emp.name}</h4>
+                                    <p className="text-xs font-bold text-slate-400 mb-4">{emp.position} • {emp.branch}</p>
+
+                                    <div className="space-y-3 pt-4 border-t border-slate-50 font-mono">
+                                        <div className="flex justify-between items-center text-[10px] font-black uppercase text-slate-400">
+                                            <span>Entrada/Salida</span>
+                                            <span className="text-slate-600">{emp.scheduleTemplate?.entrance || '--:--'} a {emp.scheduleTemplate?.exit || '--:--'}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center text-[10px] font-black uppercase text-slate-400">
+                                            <span>Zetti Alias</span>
+                                            <span className="text-teal-600">{emp.zettiSellerName || 'SIN VINCULAR'}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {hrSubTab === 'attendance' && (
+                        <div className="space-y-6">
+                            <div className="bg-white p-12 rounded-[40px] border-2 border-dashed border-slate-100 shadow-sm flex flex-col items-center text-center">
+                                <div className="p-5 bg-teal-600 rounded-3xl text-white shadow-2xl shadow-teal-100 mb-6">
+                                    <Clock className="w-10 h-10" />
+                                </div>
+                                <h3 className="font-black text-slate-900 text-2xl uppercase tracking-tighter mb-2">Carga de Fichadas</h3>
+                                <p className="text-sm text-slate-500 font-medium mb-8 max-w-sm">Sube los archivos XLS generados por el reloj de control para procesar horas y puntualidad.</p>
+
+                                <label className="relative group cursor-pointer inline-block">
+                                    <input type="file" multiple accept=".xls,.xlsx" onChange={handleAttendanceImport} className="hidden" />
+                                    <div className="px-10 py-5 bg-slate-900 group-hover:bg-teal-600 text-white rounded-[24px] font-black text-[10px] uppercase tracking-widest flex items-center gap-3 transition-all shadow-2xl active:scale-95">
+                                        <Plus className="w-5 h-5" />
+                                        Seleccionar Archivos de Horarios
+                                    </div>
+                                </label>
+                            </div>
+
+                            <div className="bg-white rounded-[32px] border border-slate-100 shadow-xl overflow-hidden">
+                                <div className="p-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
+                                    <h3 className="font-black text-slate-800 uppercase text-xs tracking-widest">Registros Procesados</h3>
+                                    <select
+                                        value={selectedEmployeeForAttendance}
+                                        onChange={(e) => setSelectedEmployeeForAttendance(e.target.value)}
+                                        className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-[10px] font-black uppercase outline-none"
+                                    >
+                                        <option value="all">TODOS EL PERSONAL</option>
+                                        {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                                    </select>
+                                </div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full">
+                                        <thead className="bg-slate-50/50">
+                                            <tr className="text-[10px] font-black uppercase text-slate-400">
+                                                <th className="p-6 text-left">Empleado</th>
+                                                <th className="p-6 text-left">Fecha</th>
+                                                <th className="p-6 text-center">Entrada 1</th>
+                                                <th className="p-6 text-center">Salida 1</th>
+                                                <th className="p-6 text-center">Entrada 2</th>
+                                                <th className="p-6 text-center">Salida 2</th>
+                                                <th className="p-6 text-center">Estado</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-50">
+                                            {attendance
+                                                .filter(a => selectedEmployeeForAttendance === 'all' || a.employeeId === selectedEmployeeForAttendance)
+                                                .slice(0, 100)
+                                                .map((r, i) => (
+                                                    <tr key={i} className="hover:bg-slate-50/50 transition-colors">
+                                                        <td className="p-6 font-black text-slate-800 uppercase text-[10px]">{r.employeeName}</td>
+                                                        <td className="p-6 font-bold text-slate-500 text-[10px]">{r.date}</td>
+                                                        <td className="p-6 text-center font-mono font-bold text-teal-600 bg-teal-50/30 text-xs">{r.entrance1 || '--:--'}</td>
+                                                        <td className="p-6 text-center font-mono font-bold text-slate-400 text-xs">{r.exit1 || '--:--'}</td>
+                                                        <td className="p-6 text-center font-mono font-bold text-teal-600 bg-teal-50/30 text-xs">{r.entrance2 || '--:--'}</td>
+                                                        <td className="p-6 text-center font-mono font-bold text-slate-400 text-xs">{r.exit2 || '--:--'}</td>
+                                                        <td className="p-6 text-center">
+                                                            <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase ${r.status === 'present' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
+                                                                }`}>
+                                                                {r.status}
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {hrSubTab === 'efficiency' && (
+                        <div className="bg-white p-20 rounded-[48px] border border-slate-100 shadow-xl flex flex-col items-center text-center">
+                            <div className="p-6 bg-slate-900 rounded-[32px] text-teal-400 mb-8 animate-pulse shadow-2xl">
+                                <TrendingUp className="w-12 h-12" />
+                            </div>
+                            <h3 className="text-3xl font-black text-slate-900 uppercase tracking-tighter mb-4">Motor de Inteligencia de Eficiencia</h3>
+                            <p className="text-slate-500 max-w-lg font-medium leading-relaxed">
+                                Estamos vinculando las **Fichadas Reales** con las **Ventas Zetti** de cada vendedor.
+                                En breve verás la producción minuto a minuto, tickets por hora y ratios de conversión aquí.
+                            </p>
+                            <div className="mt-12 grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-2xl">
+                                {[1, 2, 3, 4].map(i => <div key={i} className="h-24 bg-slate-50 rounded-3xl border border-slate-100 animate-pulse"></div>)}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )
+            }
 
             {/* Modals/Forms */}
-            {showEmployeeForm && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
-                    <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
-                        <div className="bg-slate-900 p-8 text-white flex justify-between items-center">
-                            <div>
-                                <h3 className="text-2xl font-black uppercase tracking-tighter">{editingEmployee ? 'Editar' : 'Nuevo'} Empleado</h3>
-                                <p className="text-slate-400 text-xs font-bold uppercase">Datos de gestión de personal</p>
+            {
+                showEmployeeForm && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+                        <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
+                            <div className="bg-slate-900 p-8 text-white flex justify-between items-center">
+                                <div>
+                                    <h3 className="text-2xl font-black uppercase tracking-tighter">{editingEmployee ? 'Editar' : 'Nuevo'} Empleado</h3>
+                                    <p className="text-slate-400 text-xs font-bold uppercase">Datos de gestión de personal</p>
+                                </div>
+                                <button onClick={() => { setShowEmployeeForm(false); setEditingEmployee(null); }} className="p-2 hover:bg-white/10 rounded-full transition-colors"><X className="w-6 h-6" /></button>
                             </div>
-                            <button onClick={() => { setShowEmployeeForm(false); setEditingEmployee(null); }} className="p-2 hover:bg-white/10 rounded-full transition-colors"><X className="w-6 h-6" /></button>
-                        </div>
-                        <form onSubmit={handleSaveEmployee} className="p-8 space-y-4 overflow-y-auto">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="col-span-2">
-                                    <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Nombre Completo</label>
-                                    <input name="name" defaultValue={editingEmployee?.name} required className="w-full bg-slate-50 border-none rounded-2xl py-3 px-4 text-sm font-bold outline-none ring-2 ring-transparent focus:ring-teal-500/50" />
+                            <form onSubmit={handleSaveEmployee} className="p-8 space-y-4 overflow-y-auto">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="col-span-2">
+                                        <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Nombre Completo</label>
+                                        <input name="name" defaultValue={editingEmployee?.name} required className="w-full bg-slate-50 border-none rounded-2xl py-3 px-4 text-sm font-bold outline-none ring-2 ring-transparent focus:ring-teal-500/50" />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">CUIL</label>
+                                        <input name="cuil" defaultValue={editingEmployee?.cuil} required placeholder="00-00000000-0" className="w-full bg-slate-50 border-none rounded-2xl py-3 px-4 text-sm font-bold outline-none ring-2 ring-transparent focus:ring-teal-500/50" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Nombre en Zetti (Vendedor)</label>
+                                        <input name="zettiSellerName" defaultValue={editingEmployee?.zettiSellerName} className="w-full bg-slate-50 border-none rounded-xl px-4 py-2 text-xs font-bold focus:ring-2 focus:ring-teal-500/20" placeholder="Ej: ALEXIS" />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Puesto/Cargo</label>
+                                        <input name="position" defaultValue={editingEmployee?.position} required className="w-full bg-slate-50 border-none rounded-2xl py-3 px-4 text-sm font-bold outline-none ring-2 ring-transparent focus:ring-teal-500/50" />
+                                    </div>
+                                    <div className="col-span-2 grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Entrada Teórica</label>
+                                            <input name="entrance" type="time" defaultValue={editingEmployee?.scheduleTemplate?.entrance} className="w-full bg-slate-50 border-none rounded-xl px-4 py-2 text-xs font-bold focus:ring-2 focus:ring-teal-500/20" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Salida Teórica</label>
+                                            <input name="exit" type="time" defaultValue={editingEmployee?.scheduleTemplate?.exit} className="w-full bg-slate-50 border-none rounded-xl px-4 py-2 text-xs font-bold focus:ring-2 focus:ring-teal-500/20" />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Sucursal</label>
+                                        <select name="branch" defaultValue={editingEmployee?.branch || (selectedBranch !== 'all' ? selectedBranch : '')} required className="w-full bg-slate-50 border-none rounded-2xl py-3 px-4 text-sm font-bold outline-none ring-2 ring-transparent focus:ring-teal-500/50">
+                                            <option value="FCIA BIOSALUD">FCIA BIOSALUD</option>
+                                            <option value="CHACRAS">CHACRAS PARK</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Estado</label>
+                                        <select name="status" defaultValue={editingEmployee?.status || 'active'} className="w-full bg-slate-50 border-none rounded-2xl py-3 px-4 text-sm font-bold outline-none ring-2 ring-transparent focus:ring-teal-500/50">
+                                            <option value="active">ACTIVO</option>
+                                            <option value="inactive">INACTIVO</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Fecha de Ingreso</label>
+                                        <input type="date" name="startDate" defaultValue={editingEmployee?.startDate} required className="w-full bg-slate-50 border-none rounded-2xl py-3 px-4 text-sm font-bold outline-none ring-2 ring-transparent focus:ring-teal-500/50" />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Sueldo Base ($)</label>
+                                        <input type="number" name="baseSalary" defaultValue={editingEmployee?.baseSalary} className="w-full bg-slate-50 border-none rounded-2xl py-3 px-4 text-sm font-bold outline-none ring-2 ring-transparent focus:ring-teal-500/50" />
+                                    </div>
+                                    <div className="col-span-2">
+                                        <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">CBU / Datos Bancarios</label>
+                                        <textarea name="bankInfo" defaultValue={editingEmployee?.bankInfo} className="w-full bg-slate-50 border-none rounded-2xl py-3 px-4 text-sm font-bold outline-none ring-2 ring-transparent focus:ring-teal-500/50 h-20 resize-none" />
+                                    </div>
                                 </div>
-                                <div>
-                                    <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">CUIL</label>
-                                    <input name="cuil" defaultValue={editingEmployee?.cuil} required placeholder="00-00000000-0" className="w-full bg-slate-50 border-none rounded-2xl py-3 px-4 text-sm font-bold outline-none ring-2 ring-transparent focus:ring-teal-500/50" />
-                                </div>
-                                <div>
-                                    <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Puesto/Cargo</label>
-                                    <input name="position" defaultValue={editingEmployee?.position} required className="w-full bg-slate-50 border-none rounded-2xl py-3 px-4 text-sm font-bold outline-none ring-2 ring-transparent focus:ring-teal-500/50" />
-                                </div>
-                                <div>
-                                    <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Sucursal</label>
-                                    <select name="branch" defaultValue={editingEmployee?.branch || (selectedBranch !== 'all' ? selectedBranch : '')} required className="w-full bg-slate-50 border-none rounded-2xl py-3 px-4 text-sm font-bold outline-none ring-2 ring-transparent focus:ring-teal-500/50">
-                                        <option value="FCIA BIOSALUD">FCIA BIOSALUD</option>
-                                        <option value="CHACRAS">CHACRAS PARK</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Estado</label>
-                                    <select name="status" defaultValue={editingEmployee?.status || 'active'} className="w-full bg-slate-50 border-none rounded-2xl py-3 px-4 text-sm font-bold outline-none ring-2 ring-transparent focus:ring-teal-500/50">
-                                        <option value="active">ACTIVO</option>
-                                        <option value="inactive">INACTIVO</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Fecha de Ingreso</label>
-                                    <input type="date" name="startDate" defaultValue={editingEmployee?.startDate} required className="w-full bg-slate-50 border-none rounded-2xl py-3 px-4 text-sm font-bold outline-none ring-2 ring-transparent focus:ring-teal-500/50" />
-                                </div>
-                                <div>
-                                    <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Sueldo Base ($)</label>
-                                    <input type="number" name="baseSalary" defaultValue={editingEmployee?.baseSalary} className="w-full bg-slate-50 border-none rounded-2xl py-3 px-4 text-sm font-bold outline-none ring-2 ring-transparent focus:ring-teal-500/50" />
-                                </div>
-                                <div className="col-span-2">
-                                    <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">CBU / Datos Bancarios</label>
-                                    <textarea name="bankInfo" defaultValue={editingEmployee?.bankInfo} className="w-full bg-slate-50 border-none rounded-2xl py-3 px-4 text-sm font-bold outline-none ring-2 ring-transparent focus:ring-teal-500/50 h-20 resize-none" />
-                                </div>
-                            </div>
-                            <button type="submit" className="w-full bg-teal-600 text-white py-4 rounded-2xl font-black uppercase shadow-lg shadow-teal-500/20 hover:bg-teal-700 transition-all flex items-center justify-center gap-2">
-                                <Save className="w-5 h-5" />
-                                {editingEmployee ? 'Guardar Cambios' : 'Crear Empleado'}
-                            </button>
-                        </form>
-                    </div>
-                </div>
-            )}
-
-            {showPayrollForm && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
-                    <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
-                        <div className="bg-teal-600 p-8 text-white flex justify-between items-center">
-                            <div>
-                                <h3 className="text-2xl font-black uppercase tracking-tighter">Nueva Liquidación</h3>
-                                <p className="text-teal-100 text-xs font-bold uppercase">Registro de pago a personal</p>
-                            </div>
-                            <button onClick={() => setShowPayrollForm(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors"><X className="w-6 h-6" /></button>
-                        </div>
-                        <div className="p-8 space-y-6 overflow-y-auto">
-                            <div>
-                                <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Empleado</label>
-                                <select
-                                    className="w-full bg-slate-50 border-none rounded-2xl py-3 px-4 text-sm font-bold outline-none ring-2 ring-transparent focus:ring-teal-500/50"
-                                    value={newPayroll.employeeId}
-                                    onChange={(e) => {
-                                        const emp = employees.find(emp => emp.id === e.target.value);
-                                        setNewPayroll({ ...newPayroll, employeeId: e.target.value, netAmount: emp?.baseSalary });
-                                    }}
-                                >
-                                    <option value="">Seleccionar Empleado...</option>
-                                    {employees.filter(e => e.status === 'active').map(e => (
-                                        <option key={e.id} value={e.id}>{e.name} ({e.branch})</option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Desde</label>
-                                    <input type="date" value={newPayroll.periodStart} onChange={e => setNewPayroll({ ...newPayroll, periodStart: e.target.value })} className="w-full bg-slate-50 border-none rounded-2xl py-3 px-4 text-sm font-bold outline-none" />
-                                </div>
-                                <div>
-                                    <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Hasta</label>
-                                    <input type="date" value={newPayroll.periodEnd} onChange={e => setNewPayroll({ ...newPayroll, periodEnd: e.target.value })} className="w-full bg-slate-50 border-none rounded-2xl py-3 px-4 text-sm font-bold outline-none" />
-                                </div>
-                                <div>
-                                    <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Fecha de Pago</label>
-                                    <input type="date" value={newPayroll.paymentDate} onChange={e => setNewPayroll({ ...newPayroll, paymentDate: e.target.value })} className="w-full bg-slate-50 border-none rounded-2xl py-3 px-4 text-sm font-bold outline-none" />
-                                </div>
-                                <div>
-                                    <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block font-bold text-teal-600">Monto Neto Pagado ($)</label>
-                                    <input type="number" value={newPayroll.netAmount} onChange={e => setNewPayroll({ ...newPayroll, netAmount: Number(e.target.value) })} className="w-full bg-teal-50 border-none rounded-2xl py-3 px-4 text-sm font-black text-teal-600 outline-none ring-2 ring-teal-500/20" />
-                                </div>
-                            </div>
-
-                            <div>
-                                <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Notas / Observaciones</label>
-                                <textarea value={newPayroll.observations} onChange={e => setNewPayroll({ ...newPayroll, observations: e.target.value })} className="w-full bg-slate-50 border-none rounded-2xl py-3 px-4 text-sm font-bold outline-none h-20 resize-none" />
-                            </div>
-
-                            <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100 flex gap-3">
-                                <AlertCircle className="w-5 h-5 text-amber-500 shrink-0" />
-                                <p className="text-[10px] font-bold text-amber-700 leading-relaxed uppercase">
-                                    Este pago se verá reflejado en el MIX MAESTRO como egreso operativo de la sucursal asignada al empleado.
-                                </p>
-                            </div>
-
-                            <button onClick={handleSavePayroll} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black uppercase hover:bg-slate-800 transition-all shadow-xl">
-                                Confirmar Liquidación
-                            </button>
+                                <button type="submit" className="w-full bg-teal-600 text-white py-4 rounded-2xl font-black uppercase shadow-lg shadow-teal-500/20 hover:bg-teal-700 transition-all flex items-center justify-center gap-2">
+                                    <Save className="w-5 h-5" />
+                                    {editingEmployee ? 'Guardar Cambios' : 'Crear Empleado'}
+                                </button>
+                            </form>
                         </div>
                     </div>
-                </div>
-            )}
-        </div>
+                )
+            }
+
+            {
+                showPayrollForm && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+                        <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
+                            <div className="bg-teal-600 p-8 text-white flex justify-between items-center">
+                                <div>
+                                    <h3 className="text-2xl font-black uppercase tracking-tighter">Nueva Liquidación</h3>
+                                    <p className="text-teal-100 text-xs font-bold uppercase">Registro de pago a personal</p>
+                                </div>
+                                <button onClick={() => setShowPayrollForm(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors"><X className="w-6 h-6" /></button>
+                            </div>
+                            <div className="p-8 space-y-6 overflow-y-auto">
+                                <div>
+                                    <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Empleado</label>
+                                    <select
+                                        className="w-full bg-slate-50 border-none rounded-2xl py-3 px-4 text-sm font-bold outline-none ring-2 ring-transparent focus:ring-teal-500/50"
+                                        value={newPayroll.employeeId}
+                                        onChange={(e) => {
+                                            const emp = employees.find(emp => emp.id === e.target.value);
+                                            setNewPayroll({ ...newPayroll, employeeId: e.target.value, netAmount: emp?.baseSalary });
+                                        }}
+                                    >
+                                        <option value="">Seleccionar Empleado...</option>
+                                        {employees.filter(e => e.status === 'active').map(e => (
+                                            <option key={e.id} value={e.id}>{e.name} ({e.branch})</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Desde</label>
+                                        <input type="date" value={newPayroll.periodStart} onChange={e => setNewPayroll({ ...newPayroll, periodStart: e.target.value })} className="w-full bg-slate-50 border-none rounded-2xl py-3 px-4 text-sm font-bold outline-none" />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Hasta</label>
+                                        <input type="date" value={newPayroll.periodEnd} onChange={e => setNewPayroll({ ...newPayroll, periodEnd: e.target.value })} className="w-full bg-slate-50 border-none rounded-2xl py-3 px-4 text-sm font-bold outline-none" />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Fecha de Pago</label>
+                                        <input type="date" value={newPayroll.paymentDate} onChange={e => setNewPayroll({ ...newPayroll, paymentDate: e.target.value })} className="w-full bg-slate-50 border-none rounded-2xl py-3 px-4 text-sm font-bold outline-none" />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block font-bold text-teal-600">Monto Neto Pagado ($)</label>
+                                        <input type="number" value={newPayroll.netAmount} onChange={e => setNewPayroll({ ...newPayroll, netAmount: Number(e.target.value) })} className="w-full bg-teal-50 border-none rounded-2xl py-3 px-4 text-sm font-black text-teal-600 outline-none ring-2 ring-teal-500/20" />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="text-[10px] font-black uppercase text-slate-400 mb-1 block">Notas / Observaciones</label>
+                                    <textarea value={newPayroll.observations} onChange={e => setNewPayroll({ ...newPayroll, observations: e.target.value })} className="w-full bg-slate-50 border-none rounded-2xl py-3 px-4 text-sm font-bold outline-none h-20 resize-none" />
+                                </div>
+
+                                <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100 flex gap-3">
+                                    <AlertCircle className="w-5 h-5 text-amber-500 shrink-0" />
+                                    <p className="text-[10px] font-bold text-amber-700 leading-relaxed uppercase">
+                                        Este pago se verá reflejado en el MIX MAESTRO como egreso operativo de la sucursal asignada al empleado.
+                                    </p>
+                                </div>
+
+                                <button onClick={handleSavePayroll} className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black uppercase hover:bg-slate-800 transition-all shadow-xl">
+                                    Confirmar Liquidación
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+        </div >
     );
 };

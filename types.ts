@@ -185,10 +185,13 @@ export interface InsuranceRecord {
   entity: string;
   code: string;
   type: string;
-  amount: number;
-  totalVoucher?: number; // Total de la receta
+  amount: number; // Monto OS (antes era amount genérico)
+  totalVoucher?: number; // Total de la receta (OS + Paciente)
   discountEntity?: number; // A cargo de OS
   discountClient?: number; // A cargo de Cliente
+  patientAmount?: number; // Monto a cargo del paciente
+  affiliate?: string;
+  plan?: string;
   issueDate: Date;
   dueDate: Date;
   branch: string;
@@ -196,6 +199,7 @@ export interface InsuranceRecord {
   operationType: string;
   monthYear: string;
   items: ExpenseItem[];
+  rawAgreements?: any[]; // Store raw agreements for backup/expansion
 }
 
 export interface StockRecord {
@@ -265,11 +269,41 @@ export interface Employee {
   name: string;
   cuil: string;
   position: string;
-  startDate: string; // Date string
+  startDate: string;
   branch: string;
   status: 'active' | 'inactive';
-  baseSalary?: number;
+  baseSalary: number;
   bankInfo?: string;
+  zettiSellerName?: string; // Para vincular con ventas reales
+  scheduleTemplate?: {
+    entrance: string; // HH:mm
+    exit: string; // HH:mm
+  };
+}
+
+export interface TimeAttendanceRecord {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  date: string;
+  entrance1?: string;
+  exit1?: string;
+  entrance2?: string;
+  exit2?: string;
+  totalMinutes: number;
+  status: 'present' | 'absent' | 'late' | 'justified' | 'vacation' | 'medical';
+  isAnomaly?: boolean;
+  notes?: string;
+}
+
+export interface EmployeeLicense {
+  id: string;
+  employeeId: string;
+  type: 'vacation' | 'medical' | 'suspension' | 'other';
+  startDate: string;
+  endDate: string;
+  status: 'pending' | 'approved' | 'rejected';
+  notes?: string;
 }
 
 export interface PayrollConcept {

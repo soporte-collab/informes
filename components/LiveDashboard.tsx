@@ -42,7 +42,7 @@ export const LiveDashboard: React.FC = () => {
         const q = query(
             collection(db, 'zetti_responses'),
             where('type', '==', 'hourly_sale'),
-            orderBy('issueDate', 'desc'),
+            orderBy('syncedAt', 'desc'),
             limit(20)
         );
 

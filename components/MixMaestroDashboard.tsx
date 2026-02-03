@@ -133,11 +133,15 @@ export const MixMaestroDashboard: React.FC<MixMaestroDashboardProps> = ({
         let totalItems = 0;
         let totalCostOfSales = 0;
         let transactionsWithStock = 0;
+        let totalInsurance = 0;
+        let totalCash = 0;
+        let totalCard = 0;
+        let totalChecking = 0;
 
         filteredData.forEach(tx => {
             const typeValue = (tx.type || '').toUpperCase();
 
-            // STRICT CLASSIFICATION (same logic as InvoiceDashboard)
+            // STRICT CLASSIFICATION
             const isNC = typeValue.includes('NC') || typeValue.includes('N.C') || typeValue.includes('N/C') || typeValue.includes('NOTA DE CREDITO') || typeValue.includes('CREDITO') || typeValue.includes('DEVOLUCION');
             const isTX = typeValue.includes('TX') || typeValue.includes('TRANSFER') || typeValue.includes('REMITO') || typeValue.includes('MOVIMIENTO') || typeValue.includes('TRSU') || typeValue.includes('AJUSTE');
 
@@ -148,10 +152,14 @@ export const MixMaestroDashboard: React.FC<MixMaestroDashboardProps> = ({
                 // IGNORE TX COMPLETELY FROM TOTALS
             } else if (isNC || isNegative) {
                 totalCredits += Math.abs(amount);
-                // Track NC for statistics but don't subtract from totalNet
             } else {
-                // IS SALE (FV) -> STRICTLY POSITIVE
                 totalNet += amount;
+
+                // --- PAYMENT METHOD BREAKDOWN ---
+                if (tx.paymentMethod === 'Obra Social') totalInsurance += amount;
+                else if (tx.paymentMethod === 'Efectivo') totalCash += amount;
+                else if (tx.paymentMethod === 'Cuenta Corriente') totalChecking += amount;
+                else totalCard += amount; // Fallback to Card
             }
 
             totalItems += (tx.items?.length || 0);
@@ -184,7 +192,12 @@ export const MixMaestroDashboard: React.FC<MixMaestroDashboardProps> = ({
             totalOutflow: combinedOutflow + payrollTotal,
             payrollTotal,
             finalEbitda,
-            transactionCount: filteredData.length
+            transactionCount: filteredData.length,
+            // Payment Breakdown
+            totalInsurance,
+            totalCash,
+            totalCard,
+            totalChecking
         };
     }, [filteredData, filteredExpenses, filteredServices]);
 
@@ -402,6 +415,56 @@ export const MixMaestroDashboard: React.FC<MixMaestroDashboardProps> = ({
                         <div className="mt-4 pt-4 border-t border-slate-50 flex items-center gap-2">
                             <Info className="w-4 h-4 text-amber-300" />
                             <span className="text-[10px] font-bold text-slate-400 uppercase leading-none">Prov + Serv + Sueldos</span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* --- PAYMENT BREAKDOWN WIDGET --- */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mt-6">
+                    <div className="md:col-span-4 bg-white p-6 rounded-[32px] border border-slate-100 shadow-xl flex flex-col md:flex-row items-center justify-between gap-6">
+                        <div className="flex items-center gap-4">
+                            <div className="p-3 bg-emerald-100 rounded-2xl"><CreditCard className="w-6 h-6 text-emerald-600" /></div>
+                            <div>
+                                <h3 className="font-black text-slate-800 uppercase tracking-tight">Breakdown de Medios de Pago</h3>
+                                <div className="flex items-center gap-2 mt-1">
+                                    <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">ANÁLISIS DE FLUJO</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-4 w-full">
+                            {/* Efectivo */}
+                            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Efectivo</p>
+                                <p className="text-sm font-black text-slate-800">{formatMoney(metrics.totalCash)}</p>
+                                <div className="w-full h-1 bg-slate-200 mt-2 rounded-full overflow-hidden">
+                                    <div className="h-full bg-emerald-500" style={{ width: `${(metrics.totalCash / metrics.totalNet) * 100}%` }}></div>
+                                </div>
+                            </div>
+                            {/* Tarjetas */}
+                            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Tarjetas</p>
+                                <p className="text-sm font-black text-slate-800">{formatMoney(metrics.totalCard)}</p>
+                                <div className="w-full h-1 bg-slate-200 mt-2 rounded-full overflow-hidden">
+                                    <div className="h-full bg-indigo-500" style={{ width: `${(metrics.totalCard / metrics.totalNet) * 100}%` }}></div>
+                                </div>
+                            </div>
+                            {/* Obras Sociales */}
+                            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Obras Sociales</p>
+                                <p className="text-sm font-black text-slate-800">{formatMoney(metrics.totalInsurance)}</p>
+                                <div className="w-full h-1 bg-slate-200 mt-2 rounded-full overflow-hidden">
+                                    <div className="h-full bg-blue-500" style={{ width: `${(metrics.totalInsurance / metrics.totalNet) * 100}%` }}></div>
+                                </div>
+                            </div>
+                            {/* Cta Cte */}
+                            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Cta. Corriente</p>
+                                <p className="text-sm font-black text-slate-800">{formatMoney(metrics.totalChecking)}</p>
+                                <div className="w-full h-1 bg-slate-200 mt-2 rounded-full overflow-hidden">
+                                    <div className="h-full bg-orange-500" style={{ width: `${(metrics.totalChecking / metrics.totalNet) * 100}%` }}></div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

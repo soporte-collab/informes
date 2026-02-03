@@ -232,6 +232,20 @@ export const getAllProductMasterFromDB = async (): Promise<any[]> => {
   return Array.isArray(rawData) ? rawData : [];
 };
 
+export const updateProductInMaster = async (barcode: string, updates: Partial<any>): Promise<void> => {
+  const master = await getAllProductMasterFromDB();
+  const index = master.findIndex((p: any) => p.barcode === barcode);
+
+  if (index !== -1) {
+    master[index] = { ...master[index], ...updates, lastUpdated: new Date() };
+  } else {
+    // If not found, we can add it as a new custom entry
+    master.push({ barcode, ...updates, lastUpdated: new Date() });
+  }
+
+  await saveProductMasterToDB(master);
+};
+
 // --- METADATA / SETTINGS FUNCTIONS ---
 
 export const getMetadata = async (docId: string): Promise<any> => {
@@ -256,13 +270,33 @@ export const saveMetadata = async (docId: string, data: any): Promise<void> => {
 
 // --- PAYROLL FUNCTIONS ---
 
-export const saveEmployeesToDB = async (employees: Employee[]): Promise<void> => {
+export const saveEmployeesToDB = async (employees: any[]): Promise<void> => {
   await saveJsonToStorage(employees, 'employees.json');
 };
 
-export const getAllEmployeesFromDB = async (): Promise<Employee[]> => {
-  const rawData = await loadJsonFromStorage('employees.json');
-  return Array.isArray(rawData) ? rawData : [];
+export const getAllEmployeesFromDB = async (): Promise<any[]> => {
+  const data = await loadJsonFromStorage('employees.json');
+  return Array.isArray(data) ? data : [];
+};
+
+// --- ATTENDANCE & HR FUNCTIONS ---
+
+export const getAllAttendanceFromDB = async (): Promise<any[]> => {
+  const data = await loadJsonFromStorage('attendance.json');
+  return Array.isArray(data) ? data : [];
+};
+
+export const saveAttendanceToDB = async (records: any[]): Promise<void> => {
+  await saveJsonToStorage(records, 'attendance.json');
+};
+
+export const getAllLicensesFromDB = async (): Promise<any[]> => {
+  const data = await loadJsonFromStorage('licenses.json');
+  return Array.isArray(data) ? data : [];
+};
+
+export const saveLicensesToDB = async (licenses: any[]): Promise<void> => {
+  await saveJsonToStorage(licenses, 'licenses.json');
 };
 
 export const savePayrollToDB = async (payroll: PayrollRecord[]): Promise<void> => {

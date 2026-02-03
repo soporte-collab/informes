@@ -18,12 +18,12 @@ export const formatMoney = (amount: number): string => {
   }).format(amount);
 };
 
-export const parseCurrency = (value: string): number => {
-  if (!value) return 0;
-  const cleanString = value.replace(/[^\d.,-]/g, "");
+export const parseCurrency = (value: any): number => {
+  if (value === null || value === undefined) return 0;
+  if (typeof value === 'number') return value;
+  const strValue = String(value);
+  const cleanString = strValue.replace(/[^\d.,-]/g, "");
   // Assumes format 1.234,56 (AR/EU) -> replace dot, swap comma for dot
-  // If format is already 1234.56, this logic requires adjustment. 
-  // Assuming standard AR locale.
   const normalized = cleanString.replace(/\./g, "").replace(",", ".");
   const num = parseFloat(normalized);
   return isNaN(num) ? 0 : num;

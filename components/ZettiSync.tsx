@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { eachDayOfInterval, parseISO } from 'date-fns';
 import { RefreshCw, Database, CloudLightning, ShieldCheck, AlertCircle, CheckCircle2, Search, Download, User, ShoppingBag, CreditCard, ChevronDown, HeartPulse, Trash2, Calendar, Upload, Truck, Wallet, Eye, FileJson, Layers, X } from 'lucide-react';
 import { searchZettiInvoices, searchZettiInvoiceByNumber, ZETTI_NODES, searchZettiProviderReceipts, searchZettiInsuranceReceipts, searchZettiCustomers } from '../utils/zettiService';
-import { formatMoney } from '../utils/dataHelpers';
+import { formatMoney, parseCurrency } from '../utils/dataHelpers';
 import { format } from 'date-fns';
 import { InvoiceRecord, SaleRecord, ExpenseRecord, InsuranceRecord, CurrentAccountRecord } from '../types';
 import { functions } from '../src/firebaseConfig';
@@ -22,9 +22,10 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
     const [rawSales, setRawSales] = useState<any[]>([]);
     const [rawExpenses, setRawExpenses] = useState<any[]>([]);
     const [rawInsurance, setRawInsurance] = useState<any[]>([]);
-    const [viewTab, setViewTab] = useState<'sales' | 'expenses' | 'insurance'>('sales');
+    const [viewTab, setViewTab] = useState<'sales' | 'expenses' | 'insurance' | 'tools'>('sales');
     const [showInspector, setShowInspector] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
+    const [isExploringOS, setIsExploringOS] = useState(false);
     const [syncProgress, setSyncProgress] = useState<Record<string, 'pending' | 'syncing' | 'success' | 'error'>>({});
     const [counts, setCounts] = useState<Record<string, number>>({});
     const [logs, setLogs] = useState<{ msg: string; type: 'info' | 'success' | 'warn' | 'error' }[]>([]);
@@ -33,6 +34,7 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
         if (viewTab === 'sales') setResults(rawSales);
         else if (viewTab === 'expenses') setResults(rawExpenses);
         else if (viewTab === 'insurance') setResults(rawInsurance);
+        else if (viewTab === 'tools') setResults([]);
     }, [viewTab, rawSales, rawExpenses, rawInsurance]);
 
     const addLog = (msg: string, type: 'info' | 'success' | 'warn' | 'error' = 'info') => {
@@ -56,6 +58,164 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
     const [auditLoading, setAuditLoading] = useState(false);
     const [auditResult, setAuditResult] = useState<any>(null);
     const [auditError, setAuditError] = useState<string | null>(null);
+    const [selectedProduct, setSelectedProduct] = useState<{ name: string; barcode: string; category: string; manufacturer: string } | null>(null);
+    const [isSavingProduct, setIsSavingProduct] = useState(false);
+    const [unassignedProducts, setUnassignedProducts] = useState<any[]>([]);
+
+    // --- INSURANCE AUDIT FILTERS ---
+    const [auditOSFilter, setAuditOSFilter] = useState('TODAS');
+    const [auditBranchFilter, setAuditBranchFilter] = useState('TODAS');
+    const [auditDateFilter, setAuditDateFilter] = useState('');
+
+    const handleCSVImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const files = event.target.files;
+        if (!files || files.length === 0) return;
+
+        const { db } = await import('../src/firebaseConfig');
+        const { collection, writeBatch, doc } = await import('firebase/firestore');
+        const Papa = (await import('papaparse')).default;
+
+        setIsSyncing(true);
+        addLog(`🚀 Iniciando importación de ${files.length} archivos CSV...`, 'info');
+
+        let totalImported = 0;
+        let totalSkipped = 0;
+
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            addLog(`📄 Procesando: ${file.name}...`, 'info');
+
+            await new Promise<void>((resolve) => {
+                Papa.parse(file, {
+                    header: true,
+                    skipEmptyLines: true,
+                    complete: async (results) => {
+                        const rows = results.data as any[];
+                        let batch = writeBatch(db);
+                        let batchCount = 0;
+
+                        for (const row of rows) {
+                            const productName = (row['Producto'] || '').trim();
+
+                            // 🔍 Filtro: Saltamos si empieza con { (Deshabilitados)
+                            if (productName.startsWith('{')) {
+                                totalSkipped++;
+                                continue;
+                            }
+
+                            const barcode = (row['Código de barras'] || '').trim();
+                            const productId = row['ID'] || '';
+
+                            // ID único para Firestore (Si tiene EAN real lo usamos, sino el ID de Zetti)
+                            // Evitamos 8881/9991 que son genéricos
+                            const docId = barcode && barcode.length > 5 && barcode !== '8881' && barcode !== '9991'
+                                ? barcode
+                                : productId || `Z-${Math.random().toString(36).substring(7)}`;
+
+                            if (!docId) continue;
+
+                            const productMaster = {
+                                name: productName,
+                                barcode: barcode || null,
+                                manufacturer: row['Fabricante'] || 'VARIOS',
+                                category: row['Familia'] || 'SIN ASIGNAR',
+                                productId: productId || null,
+                                dieCode: row['Troquel'] || null,
+                                externalCode: row['Código externo'] || null,
+                                lastUpdated: new Date()
+                            };
+
+                            const docRef = doc(db, 'zetti_products_master', docId);
+                            batch.set(docRef, productMaster, { merge: true });
+                            batchCount++;
+                            totalImported++;
+
+                            if (batchCount >= 400) {
+                                await batch.commit();
+                                batch = writeBatch(db);
+                                batchCount = 0;
+                                addLog(`⏳ ...procesando ${totalImported} productos`, 'info');
+                                // Pequeña pausa para no saturar
+                                await new Promise(r => setTimeout(r, 50));
+                            }
+                        }
+
+                        if (batchCount > 0) {
+                            await batch.commit();
+                        }
+                        resolve();
+                    }
+                });
+            });
+        }
+
+        setIsSyncing(false);
+        addLog(`✅ IMPORTACIÓN FINALIZADA: ${totalImported} productos cargados, ${totalSkipped} descartados (con {).`, 'success');
+
+        // Limpiar el input para permitir re-selección
+        event.target.value = '';
+    };
+
+    const handleSaveManualCategory = async () => {
+        if (!selectedProduct) return;
+        setIsSavingProduct(true);
+        try {
+            const { updateProductInMaster } = await import('../utils/db');
+            await updateProductInMaster(selectedProduct.barcode, {
+                name: selectedProduct.name,
+                category: selectedProduct.category,
+                manufacturer: selectedProduct.manufacturer
+            });
+            addLog(`✅ Producto categorizado: ${selectedProduct.name} -> ${selectedProduct.category}`, 'success');
+            setSelectedProduct(null);
+            // Si estábamos viendo la lista de sin rubro, refrescarla
+            if (unassignedProducts.length > 0) {
+                findUnassignedProducts();
+            }
+        } catch (e: any) {
+            alert("Error al guardar: " + e.message);
+        } finally {
+            setIsSavingProduct(false);
+        }
+    };
+
+    const findUnassignedProducts = async () => {
+        setIsSyncing(true);
+        addLog("🔍 Buscando productos 'Sin Rubro' o 'Varios' en ventas históricas...", "info");
+        try {
+            const { getAllSalesFromDB } = await import('../utils/db');
+            const sales = await getAllSalesFromDB();
+            const unassigned = new Map();
+
+            sales.forEach(s => {
+                if (s.category === 'Varios' || s.category === 'SIN ASIGNAR' || !s.category) {
+                    const key = s.barcode || s.productName;
+                    if (!unassigned.has(key)) {
+                        unassigned.set(key, {
+                            name: s.productName,
+                            barcode: s.barcode,
+                            category: s.category,
+                            manufacturer: s.manufacturer,
+                            count: 1
+                        });
+                    } else {
+                        unassigned.get(key).count += 1;
+                    }
+                }
+            });
+
+            const sorted = Array.from(unassigned.values())
+                .sort((a, b) => b.count - a.count)
+                .slice(0, 50);
+
+            setUnassignedProducts(sorted);
+            addLog(`✅ Se encontraron ${unassigned.size} productos con problemas de rubro. Mostrando top 50.`, 'info');
+        } catch (e: any) {
+            addLog("Error al buscar: " + e.message, "error");
+        } finally {
+            setIsSyncing(false);
+        }
+    };
 
     const handleSync = async () => {
         if (!startDate || !endDate) {
@@ -89,53 +249,69 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
                 const dayStr = format(day, 'yyyy-MM-dd');
                 console.group(`📅 DIA: ${dayStr}`);
 
-                // --- CATEGORIA 1: VENTAS ---
-                console.log('%c[1/3] Sincronizando Ventas...', 'color: #818cf8');
-                setSyncProgress(prev => ({ ...prev, sales: 'syncing' }));
-                const [bioSales, chaSales] = await Promise.all([
-                    searchZettiInvoices(dayStr, dayStr, ZETTI_NODES.BIOSALUD, false),
-                    searchZettiInvoices(dayStr, dayStr, ZETTI_NODES.CHACRAS, false)
-                ]);
-                const daySales = [
-                    ...(bioSales.content || bioSales || []).map((r: any) => ({ ...r, _branch: 'FCIA BIOSALUD' })),
-                    ...(chaSales.content || chaSales || []).map((r: any) => ({ ...r, _branch: 'BIOSALUD CHACRAS PARK' }))
-                ];
-                allSales = [...allSales, ...daySales];
-                setCounts(prev => ({ ...prev, sales: allSales.length }));
-                setResults([...allSales]); // Actualizar UI
-                addLog(`Día ${dayStr}: ${daySales.length} ventas encontradas`, 'success');
+                try {
+                    // --- CATEGORIA 1: VENTAS ---
+                    console.log('%c[1/3] Sincronizando Ventas...', 'color: #818cf8');
+                    setSyncProgress(prev => ({ ...prev, sales: 'syncing' }));
+                    const [bioSales, chaSales] = await Promise.all([
+                        searchZettiInvoices(dayStr, dayStr, ZETTI_NODES.BIOSALUD, { lightMode: false }),
+                        searchZettiInvoices(dayStr, dayStr, ZETTI_NODES.CHACRAS, { lightMode: false })
+                    ]);
+                    const daySales = [
+                        ...(bioSales.content || bioSales || []).map((r: any) => ({ ...r, _branch: 'FCIA BIOSALUD' })),
+                        ...(chaSales.content || chaSales || []).map((r: any) => ({ ...r, _branch: 'BIOSALUD CHACRAS PARK' }))
+                    ];
+                    allSales = [...allSales, ...daySales];
+                    setCounts(prev => ({ ...prev, sales: allSales.length }));
+                    setResults([...allSales]); // Actualizar UI
+                    if (daySales.length > 0) addLog(`Día ${dayStr}: ${daySales.length} ventas`, 'success');
 
-                // --- CATEGORIA 2: GASTOS ---
-                console.log('%c[2/3] Sincronizando Gastos...', 'color: #fb923c');
-                setSyncProgress(prev => ({ ...prev, expenses: 'syncing' }));
-                const [bioExp, chaExp] = await Promise.all([
-                    searchZettiProviderReceipts(dayStr, dayStr, ZETTI_NODES.BIOSALUD),
-                    searchZettiProviderReceipts(dayStr, dayStr, ZETTI_NODES.CHACRAS)
-                ]);
-                const dayExpenses = [
-                    ...(bioExp.content || bioExp || []).map((r: any) => ({ ...r, _branch: 'FCIA BIOSALUD' })),
-                    ...(chaExp.content || chaExp || []).map((r: any) => ({ ...r, _branch: 'BIOSALUD CHACRAS PARK' }))
-                ];
-                allExpenses = [...allExpenses, ...dayExpenses];
-                setCounts(prev => ({ ...prev, expenses: allExpenses.length }));
-                addLog(`Día ${dayStr}: ${dayExpenses.length} gastos encontrados`, 'info');
+                    // --- CATEGORIA 2: GASTOS ---
+                    console.log('%c[2/3] Sincronizando Gastos...', 'color: #fb923c');
+                    setSyncProgress(prev => ({ ...prev, expenses: 'syncing' }));
+                    const [bioExp, chaExp] = await Promise.all([
+                        searchZettiProviderReceipts(dayStr, dayStr, ZETTI_NODES.BIOSALUD),
+                        searchZettiProviderReceipts(dayStr, dayStr, ZETTI_NODES.CHACRAS)
+                    ]);
+                    const dayExpenses = [
+                        ...(bioExp.content || bioExp || []).map((r: any) => ({ ...r, _branch: 'FCIA BIOSALUD' })),
+                        ...(chaExp.content || chaExp || []).map((r: any) => ({ ...r, _branch: 'BIOSALUD CHACRAS PARK' }))
+                    ];
+                    allExpenses = [...allExpenses, ...dayExpenses];
+                    setCounts(prev => ({ ...prev, expenses: allExpenses.length }));
+                    if (dayExpenses.length > 0) addLog(`Día ${dayStr}: ${dayExpenses.length} gastos`, 'info');
 
-                // --- CATEGORIA 3: OBRAS SOCIALES ---
-                console.log('%c[3/3] Sincronizando Obras Sociales...', 'color: #10b981');
-                setSyncProgress(prev => ({ ...prev, insurance: 'syncing' }));
-                const [bioIns, chaIns] = await Promise.all([
-                    searchZettiInsuranceReceipts(dayStr, dayStr, ZETTI_NODES.BIOSALUD),
-                    searchZettiInsuranceReceipts(dayStr, dayStr, ZETTI_NODES.CHACRAS)
-                ]);
-                const dayInsurance = [
-                    ...(bioIns.content || bioIns || []).map((r: any) => ({ ...r, _branch: 'FCIA BIOSALUD' })),
-                    ...(chaIns.content || chaIns || []).map((r: any) => ({ ...r, _branch: 'BIOSALUD CHACRAS PARK' }))
-                ];
-                allInsurance = [...allInsurance, ...dayInsurance];
-                setCounts(prev => ({ ...prev, insurance: allInsurance.length }));
-                if (dayInsurance.length > 0) addLog(`Día ${dayStr}: ${dayInsurance.length} liquidaciones OS`, 'success');
+                    // --- CATEGORIA 3: OBRAS SOCIALES ---
+                    console.log('%c[3/3] Sincronizando Obras Sociales...', 'color: #10b981');
+                    setSyncProgress(prev => ({ ...prev, insurance: 'syncing' }));
+                    const [bioIns, chaIns] = await Promise.all([
+                        searchZettiInsuranceReceipts(dayStr, dayStr, ZETTI_NODES.BIOSALUD),
+                        searchZettiInsuranceReceipts(dayStr, dayStr, ZETTI_NODES.CHACRAS)
+                    ]);
+                    const dayInsurance = [
+                        ...(bioIns.content || bioIns || []).map((r: any) => ({ ...r, _branch: 'FCIA BIOSALUD' })),
+                        ...(chaIns.content || chaIns || []).map((r: any) => ({ ...r, _branch: 'BIOSALUD CHACRAS PARK' }))
+                    ];
+                    allInsurance = [...allInsurance, ...dayInsurance];
+                    setCounts(prev => ({ ...prev, insurance: allInsurance.length }));
+                    if (dayInsurance.length > 0) addLog(`Día ${dayStr}: ${dayInsurance.length} recetas OS`, 'success');
 
-                console.groupEnd();
+                    // Real-time UI updates for all tabs
+                    setRawSales([...allSales]);
+                    setRawExpenses([...allExpenses]);
+                    setRawInsurance([...allInsurance]);
+                    setResults([...allSales]); // For the main generic view
+
+                    // Wait a bit to not overwhelm the server (1 second)
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+
+                } catch (dayError: any) {
+                    console.error(`Error en día ${dayStr}:`, dayError);
+                    addLog(`Error en día ${dayStr}: ${dayError.message}`, 'warn');
+                    // Continue with next day
+                } finally {
+                    console.groupEnd();
+                }
             }
 
             setSyncProgress(prev => ({ ...prev, sales: 'success', expenses: 'success', insurance: 'success' }));
@@ -182,10 +358,55 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
         }
     };
 
+    const handleExploreOS = async () => {
+        if (!startDate || !endDate) return alert('Selecciona fechas.');
+        setIsExploringOS(true);
+        setStatus('tunneling');
+        setLogs([]);
+        addLog(`Iniciando Exploración Profunda de Obras Sociales: ${startDate} al ${endDate}`, 'info');
+
+        try {
+            const [bio, cha] = await Promise.all([
+                searchZettiInvoices(startDate, endDate, ZETTI_NODES.BIOSALUD, { includeAgreements: true, includeConcepts: true }),
+                searchZettiInvoices(startDate, endDate, ZETTI_NODES.CHACRAS, { includeAgreements: true, includeConcepts: true })
+            ]);
+
+            const allRaw = [
+                ...(bio.content || bio || []).map((r: any) => ({ ...r, _branch: 'FCIA BIOSALUD' })),
+                ...(cha.content || cha || []).map((r: any) => ({ ...r, _branch: 'BIOSALUD CHACRAS PARK' }))
+            ];
+
+            // Filtrar solo los que tienen OS (agreement de tipo prescription o similar)
+            const osOnly = allRaw.filter((r: any) =>
+                (r.pagos || r.agreements || []).some((p: any) => p.t === 'prescription' || p.type === 'prescription' || p.n?.toUpperCase().includes('PAMI'))
+            );
+
+            setRawInsurance(osOnly);
+            setViewTab('insurance');
+            setResults(osOnly);
+            setStatus('success');
+            addLog(`Exploración finalizada. Encontrados ${osOnly.length} registros con Obra Social con detalle de montos.`, 'success');
+
+        } catch (err: any) {
+            setError(err.message);
+            setStatus('error');
+        } finally {
+            setIsExploringOS(false);
+        }
+    };
+
     const processAndSaveAll = async (raw: { sales: any[], expenses: any[], insurance: any[], customers: any[] }) => {
         // --- VENTAS & INVOICES ---
         const invoices: InvoiceRecord[] = [];
         const allSales: SaleRecord[] = [];
+
+        // Cargamos el maestro de productos para enriquecer categorías manuales
+        const { getAllProductMasterFromDB } = await import('../utils/db');
+        const productMaster = await getAllProductMasterFromDB();
+        const masterMap = new Map();
+        productMaster.forEach(p => {
+            if (p.barcode) masterMap.set(p.barcode, p);
+        });
 
         raw.sales.forEach(item => {
             const rawDate = item.fec || new Date().toISOString();
@@ -199,7 +420,30 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
             else if (card) mainPay = card.n || 'Tarjeta';
             else if (checking) mainPay = 'Cuenta Corriente';
 
-            const entity = agreement?.n || 'Particular';
+            let insuranceAmount = 0;
+            const entity = agreement?.n || 'Particular'; // Restored
+
+            // 1. Intentar sacar el monto de la Obra Social desde "operations" (Nuevo Túnel Deep)
+            if (item.operations && item.operations.length > 0) {
+                // Buscamos operaciones que sean de tipo cobro por OS o similar
+                // (En Zetti, la OS suele ser una operación con ciertos IDs, pero a falta de ID exacto,
+                // buscamos por descarte o por match con el agreement)
+                const opOS = item.operations.find((op: any) =>
+                    op.operationType?.id === '10' || op.operationType?.description?.toUpperCase().includes('RECETA') ||
+                    op.operationType?.description?.toUpperCase().includes('PLAN')
+                );
+                if (opOS) {
+                    insuranceAmount = opOS.amount || opOS.mainAmount || 0;
+                }
+            }
+
+            // 2. Si no, intentar desde agreements (Legacy o si Zetti lo manda directo)
+            if (insuranceAmount === 0 && agreement) {
+                insuranceAmount = agreement.mainAmount || agreement.amount || 0;
+            }
+
+            // Si es obv. social pero amount es 0, a veces Zetti pone el total en "tot"
+            // NO ASUMIMOS NADA SI ES 0.
 
             let normalizedType = 'FV';
             const tco = (item.tco || '').toUpperCase();
@@ -213,8 +457,8 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
                 type: normalizedType as any,
                 date: new Date(rawDate),
                 monthYear: format(new Date(rawDate), 'yyyy-MM'),
-                grossAmount: item.tot || 0,
-                netAmount: item.tot || 0,
+                grossAmount: parseCurrency(item.tot),
+                netAmount: parseCurrency(item.tot),
                 discount: 0,
                 seller: item.ven || 'BIO',
                 entity: entity,
@@ -229,23 +473,28 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
                 // Capturamos el costo si Zetti lo manda (como costPrice o purchaseCost)
                 const unitCost = it.costPrice || it.purchaseCost || it.cost || 0;
 
+                const barcode = it.bar || '';
+                const masterInfo = masterMap.get(barcode);
+                const finalCategory = masterInfo?.category || it.cat || it.lab || 'Varios';
+                const finalManufacturer = masterInfo?.manufacturer || it.lab || 'Zetti';
+
                 allSales.push({
                     id: `${invoice.id}-${it.id || Math.random()}`,
                     invoiceNumber: invoice.invoiceNumber,
                     date: new Date(rawDate),
                     monthYear: invoice.monthYear,
                     productName: it.nom || 'Producto',
-                    quantity: it.can || 1,
-                    unitPrice: it.pre || 0,
-                    totalAmount: it.sub || 0,
-                    category: it.cat || it.lab || 'Varios',
+                    quantity: parseCurrency(it.can) || 1,
+                    unitPrice: parseCurrency(it.pre),
+                    totalAmount: parseCurrency(it.sub),
+                    category: finalCategory,
                     branch: invoice.branch,
                     sellerName: invoice.seller,
                     entity: invoice.entity,
                     paymentMethod: invoice.paymentType,
-                    barcode: it.bar || '',
-                    manufacturer: it.lab || 'Zetti',
-                    unitCost: unitCost,
+                    barcode: barcode,
+                    manufacturer: finalManufacturer,
+                    unitCost: parseCurrency(unitCost),
                     hour: new Date(rawDate).getHours()
                 });
             });
@@ -261,7 +510,8 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
         console.log(`[SYNC] Categorías de servicios detectadas: ${Object.keys(serviceCategories).length}`);
 
         raw.expenses.forEach(r => {
-            const amount = r.mainAmount || r.totalAmount || r.amount || 0;
+            const amountStr = r.mainAmount || r.totalAmount || r.amount || '0';
+            const amount = parseCurrency(amountStr);
             const supplierName = r.supplier?.name || r.provider?.name || (typeof r.supplier === 'string' ? r.supplier : 'Proveedor');
             const isService = !!serviceCategories[supplierName];
 
@@ -290,7 +540,19 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
         // --- SEGUROS (INSURANCE RECEIPTS) ---
         const mappedInsurance: InsuranceRecord[] = [];
         raw.insurance.forEach(r => {
-            const amount = r.mainAmount || r.totalAmount || r.amount || 0;
+            // Priority: Operation amount -> mainAmount -> amount
+            let amountStr = r.mainAmount || r.totalAmount || r.amount || '0';
+
+            // Check operations from deep enrichment
+            if (r.operations && r.operations.length > 0) {
+                const opOS = r.operations.find((op: any) =>
+                    op.operationType?.id === '10' || op.operationType?.description?.toUpperCase().includes('RECETA') ||
+                    op.operationType?.description?.toUpperCase().includes('PLAN')
+                );
+                if (opOS) amountStr = opOS.amount || opOS.mainAmount || amountStr;
+            }
+
+            const amount = parseCurrency(amountStr);
             const entityName = r.healthInsuranceProvider?.name || r.entity?.name || (typeof r.entity === 'string' ? r.entity : 'O.S.');
 
             // Si por error Zetti nos devuelve un proveedor de droguería aquí, lo ignoramos o movemos
@@ -300,19 +562,29 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
                 return;
             }
 
+            const agreement = (r.agreements || []).find((a: any) => a.type === 'prescription' || a.t === 'prescription');
+            const patientAmount = agreement ? parseCurrency(agreement.clientAmount) : 0;
+            const affiliate = agreement ? (agreement.affiliateNumber || '-') : '-';
+            const plan = agreement ? (agreement.healthInsurancePlan?.shortName || agreement.healthInsurancePlan?.name || '-') : '-';
+
             mappedInsurance.push({
                 id: r.id?.toString() || Math.random().toString(),
                 entity: entityName,
                 amount: amount,
+                patientAmount: patientAmount,
+                totalVoucher: amount + patientAmount,
+                affiliate: affiliate,
+                plan: plan,
                 issueDate: new Date(r.emissionDate || new Date()),
                 dueDate: new Date(r.dueDate || r.emissionDate || new Date()),
                 branch: r._branch || 'General',
                 monthYear: format(new Date(r.emissionDate || new Date()), 'yyyy-MM'),
                 code: r.number || r.codification || '-',
-                type: r.valueType?.name || (typeof r.valueType === 'string' ? r.valueType : 'Liquidación'),
-                status: r.status?.name || (typeof r.status === 'string' ? r.status : 'Pagado'),
-                operationType: 'Obra Social Zetti',
-                items: []
+                type: r.valueType?.name || (typeof r.valueType === 'string' ? r.valueType : 'Receta'),
+                status: r.status?.name || (typeof r.status === 'string' ? r.status : 'INGRESADO'),
+                operationType: 'Liquidación',
+                items: [],
+                rawAgreements: r.agreements || []
             });
         });
 
@@ -354,11 +626,11 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
             currentAccounts: mappedCurrentAccount
         });
 
-        // --- 6. AUTO-ENRICHMENT ---
-        addLog('Iniciando Enriquecimiento de Datos en segundo plano...', 'info');
-        handleEnrichProcess()
-            .then(() => addLog('Enriquecimiento completado', 'success'))
-            .catch(err => addLog(`Error en enriquecimiento: ${err.message}`, 'error'));
+        // --- 6. AUTO-ENRICHMENT --- DESHABILITADO
+        // addLog('Iniciando Enriquecimiento de Datos en segundo plano...', 'info');
+        // handleEnrichProcess()
+        //     .then(() => addLog('Enriquecimiento completado', 'success'))
+        //     .catch(err => addLog(`Error en enriquecimiento: ${err.message}`, 'error'));
     };
 
     const handleEnrichProcess = async () => {
@@ -637,6 +909,37 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
         alert(`✅ ${invoices.length} Comprobantes y ${allSales.length} ítems de venta cargados al panel.`);
     };
 
+    // --- FILTER LOGIC ---
+    const filteredAuditResults = useMemo(() => {
+        if (viewTab !== 'insurance') return [];
+        return results.filter(r => {
+            let osName = r.entity || r.healthInsuranceProvider?.name || 'S/D';
+            if (r.agreements) {
+                const agr = r.agreements.find((a: any) => a.type === 'prescription');
+                if (agr && agr.healthInsurance) osName = agr.healthInsurance.name;
+            }
+            const dateStr = r.fec || r.emissionDate ? format(new Date(r.fec || r.emissionDate), 'yyyy-MM-dd') : '';
+
+            const matchOS = auditOSFilter === 'TODAS' || osName === auditOSFilter;
+            const matchBranch = auditBranchFilter === 'TODAS' || (r._branch === auditBranchFilter);
+            const matchDate = !auditDateFilter || dateStr === auditDateFilter;
+
+            return matchOS && matchBranch && matchDate;
+        });
+    }, [results, viewTab, auditOSFilter, auditBranchFilter, auditDateFilter]);
+
+    const uniqueOSList = useMemo(() => {
+        if (viewTab !== 'insurance') return [];
+        const set = new Set(results.map(r => {
+            if (r.agreements) {
+                const agr = r.agreements.find((a: any) => a.type === 'prescription');
+                if (agr && agr.healthInsurance) return agr.healthInsurance.name;
+            }
+            return r.entity || r.healthInsuranceProvider?.name || 'S/D';
+        }));
+        return Array.from(set).filter(Boolean).sort();
+    }, [results, viewTab]);
+
     return (
         <div className="space-y-6">
             {/* --- PANEL DE SINCRONIZACION --- */}
@@ -702,6 +1005,15 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
                                 <CloudLightning className="w-5 h-5 group-hover:scale-125 transition-transform" />
                             )}
                             {isSyncing ? 'SINCRONIZANDO REPORTE UNIVERSAL...' : 'INICIAR SINCRONIZACIÓN COMPLETA'}
+                        </button>
+
+                        <button
+                            onClick={handleExploreOS}
+                            disabled={isExploringOS || isSyncing}
+                            className={`flex-1 py-4 rounded-2xl font-black text-xs transition-all flex items-center justify-center gap-3 ${isExploringOS ? 'bg-slate-800 text-slate-500' : 'bg-indigo-900 border border-indigo-700 text-indigo-100 hover:bg-indigo-800 shadow-xl'}`}
+                        >
+                            <HeartPulse className={`w-4 h-4 ${isExploringOS ? 'animate-pulse' : ''}`} />
+                            {isExploringOS ? 'EXPLORANDO...' : ' EXPLORAR COBERTURAS OS'}
                         </button>
 
                         <button
@@ -840,62 +1152,339 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
 
                             {masterUploadResult && <p className="text-[10px] font-bold text-indigo-500">{masterUploadResult}</p>}
                         </div>
+                        <button
+                            onClick={() => { setViewTab('tools'); setStatus('success'); }}
+                            className={`w-full md:w-auto py-4 px-8 rounded-2xl bg-rose-100 text-rose-700 font-black text-sm tracking-tight hover:bg-rose-200 transition-all flex items-center justify-center gap-3 shadow-xl shadow-rose-600/10 group h-[60px] whitespace-nowrap`}
+                            title="Importar productos masivamente desde CSV"
+                        >
+                            <Upload className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                            IMPORTAR CSV
+                        </button>
                     </div>
                 </div>
             </div>
 
             {/* --- RESULTADOS & INSPECTOR --- */}
-            {status === 'success' && (
+            {(status === 'success' || viewTab === 'tools') && (
                 <div className="bg-white rounded-[32px] border border-slate-200 shadow-xl overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
                     <div className="p-6 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
                         <div className="flex items-center gap-4">
-                            <div className="bg-indigo-600 p-2.5 rounded-2xl shadow-lg shadow-indigo-100">
-                                <FileJson className="w-5 h-5 text-white" />
+                            <div className={`p-2.5 rounded-2xl shadow-lg shadow-indigo-100 ${viewTab === 'insurance' ? 'bg-emerald-600' : 'bg-indigo-600'}`}>
+                                {viewTab === 'insurance' ? <HeartPulse className="w-5 h-5 text-white" /> : <FileJson className="w-5 h-5 text-white" />}
                             </div>
                             <div>
-                                <h4 className="font-black text-slate-800 text-sm uppercase tracking-tight">Captura de Datos Zetti</h4>
-                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">Inspector de Respuesta Cruda</p>
+                                <h4 className="font-black text-slate-800 text-sm uppercase tracking-tight">
+                                    {viewTab === 'insurance' ? 'Auditoría de Obras Sociales' : 'Captura de Datos Zetti'}
+                                </h4>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">
+                                    {viewTab === 'insurance' ? 'Inteligencia Financiera de Recetas' : 'Inspector de Respuesta Cruda'}
+                                </p>
                             </div>
                         </div>
                         <div className="flex bg-slate-200/50 p-1.5 rounded-2xl gap-1">
                             <button onClick={() => setViewTab('sales')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${viewTab === 'sales' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}>Ventas</button>
                             <button onClick={() => setViewTab('expenses')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${viewTab === 'expenses' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}>Gastos</button>
                             <button onClick={() => setViewTab('insurance')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${viewTab === 'insurance' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}>O.S.</button>
+                            <button onClick={() => setViewTab('tools')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${viewTab === 'tools' ? 'bg-white text-rose-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}>Herramientas</button>
                         </div>
                     </div>
 
-                    <div className="max-h-[400px] overflow-auto custom-scrollbar">
-                        <table className="w-full text-left text-xs">
-                            <thead className="bg-white text-slate-400 sticky top-0 uppercase font-black text-[9px] tracking-widest border-b border-slate-100">
-                                <tr>
-                                    <th className="p-6">Fecha/Hora</th>
-                                    <th className="p-6">Identificador</th>
-                                    <th className="p-6">Origen / Tercero</th>
-                                    <th className="p-6 text-right">Monto Neto</th>
-                                    <th className="p-6 text-center">Detalle</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-50">
-                                {results.length === 0 ? (
-                                    <tr>
-                                        <td colSpan={5} className="p-12 text-center text-slate-400 font-bold italic uppercase tracking-widest text-[10px]">No hay registros en esta categoría</td>
-                                    </tr>
-                                ) : (
-                                    results.map((r, i) => (
-                                        <tr key={i} className="hover:bg-slate-50 transition-colors group">
-                                            <td className="p-6 font-bold text-slate-500">{r.fec || r.emissionDate ? format(new Date(r.fec || r.emissionDate), 'dd/MM HH:mm') : '-'}</td>
-                                            <td className="p-6"><span className="font-mono font-black text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg text-[10px]">{r.cod || r.number || r.codification || 'S/N'}</span></td>
-                                            <td className="p-6 font-bold text-slate-900 truncate max-w-[250px]">{r.cli || r.supplier?.name || (r.healthInsuranceProvider?.name || r.entity?.name) || 'Particular'}</td>
-                                            <td className="p-6 text-right font-black text-slate-900">{formatMoney(r.tot || r.totalAmount || r.mainAmount)}</td>
-                                            <td className="p-6 text-center">
-                                                <button onClick={() => { setAuditResult(r); setShowInspector(true); }} className="p-2.5 bg-slate-100 rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all shadow-sm group-hover:shadow-md"><Eye className="w-4 h-4" /></button>
-                                            </td>
-                                        </tr>
-                                    ))
+                    {viewTab === 'insurance' ? (
+                        // --- VISTA ESPECÍFICA PARA OBRAS SOCIALES ---
+                        <div className="p-8">
+                            {/* FILTERS TOOLBAR */}
+                            <div className="flex flex-wrap items-center gap-4 mb-8 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                                <div className="flex-1 min-w-[200px]">
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Obra Social</label>
+                                    <div className="relative">
+                                        <select
+                                            value={auditOSFilter}
+                                            onChange={e => setAuditOSFilter(e.target.value)}
+                                            className="w-full bg-white border border-slate-200 text-slate-700 text-xs font-bold rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-emerald-500/20 appearance-none cursor-pointer"
+                                        >
+                                            <option value="TODAS">TODAS LAS OBRAS SOCIALES</option>
+                                            {uniqueOSList.map(os => <option key={os} value={os}>{os}</option>)}
+                                        </select>
+                                        <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                    </div>
+                                </div>
+
+                                <div className="w-[200px]">
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Sucursal</label>
+                                    <div className="relative">
+                                        <select
+                                            value={auditBranchFilter}
+                                            onChange={e => setAuditBranchFilter(e.target.value)}
+                                            className="w-full bg-white border border-slate-200 text-slate-700 text-xs font-bold rounded-xl px-4 py-2.5 outline-none focus:ring-2 focus:ring-emerald-500/20 appearance-none cursor-pointer"
+                                        >
+                                            <option value="TODAS">TODAS</option>
+                                            <option value="FCIA BIOSALUD">FCIA BIOSALUD</option>
+                                            <option value="BIOSALUD CHACRAS PARK">CHACRAS PARK</option>
+                                        </select>
+                                        <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                    </div>
+                                </div>
+
+                                <div className="w-[150px]">
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Fecha</label>
+                                    <input
+                                        type="date"
+                                        value={auditDateFilter}
+                                        onChange={e => setAuditDateFilter(e.target.value)}
+                                        className="w-full bg-white border border-slate-200 text-slate-700 text-xs font-bold rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-emerald-500/20"
+                                    />
+                                </div>
+
+                                {(auditOSFilter !== 'TODAS' || auditBranchFilter !== 'TODAS' || auditDateFilter) && (
+                                    <button
+                                        onClick={() => { setAuditOSFilter('TODAS'); setAuditBranchFilter('TODAS'); setAuditDateFilter(''); }}
+                                        className="mt-6 p-2 bg-red-50 text-red-500 rounded-xl hover:bg-red-100 transition-colors"
+                                        title="Limpiar Filtros"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
                                 )}
-                            </tbody>
-                        </table>
-                    </div>
+                            </div>
+
+                            {/* Kpis Rápidos con Filtered Results */}
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                                <div className="bg-emerald-50 rounded-2xl p-6 border border-emerald-100">
+                                    <p className="text-emerald-600 font-bold text-[10px] uppercase tracking-widest mb-2">Total Cobertura OS</p>
+                                    <p className="text-3xl font-black text-slate-800">
+                                        {formatMoney(filteredAuditResults.reduce((acc, r) => {
+                                            let amt = r.amount || r.mainAmount || 0;
+                                            if (r.agreements) {
+                                                const agr = r.agreements.find((a: any) => a.type === 'prescription');
+                                                if (agr) amt = agr.mainAmount || 0;
+                                            }
+                                            return acc + amt;
+                                        }, 0))}
+                                    </p>
+                                </div>
+                                <div className="bg-blue-50 rounded-2xl p-6 border border-blue-100">
+                                    <p className="text-blue-600 font-bold text-[10px] uppercase tracking-widest mb-2">Cantidad Recetas</p>
+                                    <p className="text-3xl font-black text-slate-800">{filteredAuditResults.length}</p>
+                                </div>
+                                <div className="bg-violet-50 rounded-2xl p-6 border border-violet-100 col-span-2">
+                                    <p className="text-violet-600 font-bold text-[10px] uppercase tracking-widest mb-4">Top 3 Obras Sociales (Visible)</p>
+                                    <div className="space-y-3">
+                                        {(() => {
+                                            const ranking = new Map();
+                                            filteredAuditResults.forEach(r => {
+                                                let name = r.entity || r.healthInsuranceProvider?.name || 'S/D';
+                                                if (r.agreements) {
+                                                    const agr = r.agreements.find((a: any) => a.type === 'prescription');
+                                                    if (agr && agr.healthInsurance) name = agr.healthInsurance.name;
+                                                }
+                                                ranking.set(name, (ranking.get(name) || 0) + 1);
+                                            });
+                                            return Array.from(ranking.entries())
+                                                .sort((a, b) => b[1] - a[1])
+                                                .slice(0, 3)
+                                                .map(([name, count], idx) => (
+                                                    <div key={idx} className="flex items-center justify-between text-xs font-bold text-slate-700 border-b border-violet-100 last:border-0 pb-1">
+                                                        <span>{idx + 1}. {name}</span>
+                                                        <span className="bg-white px-2 py-0.5 rounded-md text-violet-600">{count} rece</span>
+                                                    </div>
+                                                ));
+                                        })()}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Tabla Especial Obras Sociales (Filtered) */}
+                            <div className="max-h-[500px] overflow-auto custom-scrollbar rounded-2xl border border-slate-100">
+                                <table className="w-full text-left text-xs">
+                                    <thead className="bg-slate-50 text-slate-400 sticky top-0 uppercase font-black text-[9px] tracking-widest border-b border-slate-200 z-10">
+                                        <tr>
+                                            <th className="p-4">Fecha</th>
+                                            <th className="p-4">Obra Social</th>
+                                            <th className="p-4">Comprobante</th>
+                                            <th className="p-4">Afiliado / Plan</th>
+                                            <th className="p-4 text-right">Monto Cobertura</th>
+                                            <th className="p-4 text-center">Estado</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-50 bg-white">
+                                        {filteredAuditResults.length === 0 ? (
+                                            <tr><td colSpan={6} className="p-8 text-center text-slate-400 italic">No hay resultados con los filtros aplicados.</td></tr>
+                                        ) : (
+                                            filteredAuditResults.map((r, i) => {
+                                                let osName = r.entity || r.healthInsuranceProvider?.name || '-';
+                                                let osAmount = r.amount || r.mainAmount || 0;
+                                                let ticket = r.cod || r.number || r.codification || 'S/N';
+                                                let affiliate = '-';
+                                                let plan = '-';
+
+                                                if (r.agreements) {
+                                                    const agr = r.agreements.find((a: any) => a.type === 'prescription');
+                                                    if (agr) {
+                                                        osAmount = agr.mainAmount;
+                                                        if (agr.healthInsurance) osName = agr.healthInsurance.name;
+                                                        if (agr.affiliateNumber) affiliate = agr.affiliateNumber;
+                                                        if (agr.healthInsurancePlan) plan = agr.healthInsurancePlan.shortName || agr.healthInsurancePlan.name;
+                                                    }
+                                                }
+
+                                                return (
+                                                    <tr key={i} className="hover:bg-slate-50 transition-colors">
+                                                        <td className="p-4 font-bold text-slate-500 w-32">{r.fec || r.emissionDate ? format(new Date(r.fec || r.emissionDate), 'dd/MM HH:mm') : '-'}</td>
+                                                        <td className="p-4 font-black text-slate-800">{osName}</td>
+                                                        <td className="p-4"><span className="font-mono text-[10px] text-slate-500 bg-slate-100 px-2 py-1 rounded">{ticket}</span></td>
+                                                        <td className="p-4 text-slate-500 max-w-[150px] truncate" title={`${affiliate} - ${plan}`}>
+                                                            {affiliate !== '-' ? affiliate : ''} <span className="text-slate-300">|</span> {plan}
+                                                        </td>
+                                                        <td className="p-4 text-right font-black text-emerald-600 text-sm">{formatMoney(osAmount)}</td>
+                                                        <td className="p-4 text-center flex items-center justify-center gap-2">
+                                                            {r._branch && r._branch.toUpperCase().includes('CHACRAS')
+                                                                ? <span className="text-[9px] font-bold text-orange-500 border border-orange-200 px-1 rounded">CHACRAS</span>
+                                                                : <span className="text-[9px] font-bold text-blue-500 border border-blue-200 px-1 rounded">BIO</span>
+                                                            }
+                                                            <button onClick={() => { setAuditResult(r); setShowInspector(true); }} className="p-1.5 hover:bg-indigo-50 text-slate-300 hover:text-indigo-600 rounded-lg transition-all"><Eye className="w-3 h-3" /></button>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    ) : viewTab === 'tools' ? (
+                        // --- NUEVA VISTA DE HERRAMIENTAS ---
+                        <div className="p-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                <div className="bg-rose-50 rounded-[40px] p-12 border border-rose-100 flex flex-col items-center text-center shadow-sm">
+                                    <div className="p-5 bg-rose-500 rounded-3xl text-white shadow-2xl shadow-rose-200 mb-8">
+                                        <Database className="w-10 h-10" />
+                                    </div>
+                                    <h3 className="font-black text-slate-900 text-2xl uppercase tracking-tighter mb-3">Importador Maestro CSV</h3>
+                                    <p className="text-sm text-slate-500 font-medium mb-10 leading-relaxed max-w-sm">
+                                        Actualiza la inteligencia de productos BIOSALUD cargando los reportes de Zetti por familia.<br /><br />
+                                        <span className="text-rose-600 font-black uppercase text-[10px] bg-rose-100 px-2 py-1 rounded-lg mr-2">Filtro Activo:</span>
+                                        Se omiten productos que inician con <span className="font-black">"{"{"}"</span> (Discontinuados).
+                                    </p>
+
+                                    <label className="relative group cursor-pointer">
+                                        <input
+                                            type="file"
+                                            multiple
+                                            accept=".csv"
+                                            onChange={handleCSVImport}
+                                            className="hidden"
+                                            disabled={isSyncing}
+                                        />
+                                        <div className={`px-12 py-6 ${isSyncing ? 'bg-slate-400' : 'bg-slate-900 group-hover:bg-rose-600'} text-white rounded-[24px] font-black text-xs uppercase tracking-widest flex items-center gap-4 transition-all shadow-2xl shadow-slate-900/30 active:scale-95`}>
+                                            {isSyncing ? (
+                                                <RefreshCw className="w-5 h-5 animate-spin" />
+                                            ) : (
+                                                <Upload className="w-5 h-5" />
+                                            )}
+                                            {isSyncing ? 'Procesando...' : 'Seleccionar Archivos CSV'}
+                                        </div>
+                                    </label>
+                                    <p className="text-[10px] text-slate-400 font-bold uppercase mt-6 tracking-widest">
+                                        Formatos soportados: CSV Export de Zetti
+                                    </p>
+                                </div>
+
+                                <div className="bg-slate-50 rounded-[40px] p-12 border border-slate-200 flex flex-col items-center text-center shadow-sm">
+                                    <div className="p-5 bg-indigo-500 rounded-3xl text-white shadow-2xl shadow-indigo-200 mb-8">
+                                        <Layers className="w-10 h-10" />
+                                    </div>
+                                    <h3 className="font-black text-slate-900 text-2xl uppercase tracking-tighter mb-3">Auditoría Sin Rubro</h3>
+                                    <p className="text-sm text-slate-500 font-medium mb-10 leading-relaxed max-w-sm">
+                                        Escanea las ventas históricas en busca de productos marcados como "Varios" o sin categoría asignada.
+                                    </p>
+
+                                    <button
+                                        onClick={findUnassignedProducts}
+                                        disabled={isSyncing}
+                                        className="px-12 py-6 bg-indigo-600 hover:bg-indigo-700 text-white rounded-[24px] font-black text-xs uppercase tracking-widest flex items-center gap-4 transition-all shadow-2xl shadow-indigo-600/20 active:scale-95"
+                                    >
+                                        <Search className="w-5 h-5" />
+                                        {isSyncing ? 'Buscando...' : 'Buscar Productos Sin Rubro'}
+                                    </button>
+
+                                    {unassignedProducts.length > 0 && (
+                                        <div className="mt-8 w-full max-h-[300px] overflow-auto rounded-2xl border border-slate-200 bg-white">
+                                            <table className="w-full text-[10px] text-left">
+                                                <thead className="bg-slate-50 sticky top-0 font-black uppercase tracking-wider text-slate-400">
+                                                    <tr>
+                                                        <th className="p-3">Producto</th>
+                                                        <th className="p-3 text-center">Ventas</th>
+                                                        <th className="p-3 text-right">Acción</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100">
+                                                    {unassignedProducts.map((p, idx) => (
+                                                        <tr key={idx} className="hover:bg-slate-50">
+                                                            <td className="p-3 font-bold text-slate-700 truncate max-w-[150px]">{p.name}</td>
+                                                            <td className="p-3 text-center font-black text-indigo-600">{p.count}</td>
+                                                            <td className="p-3 text-right">
+                                                                <button
+                                                                    onClick={() => setSelectedProduct(p)}
+                                                                    className="bg-indigo-50 text-indigo-600 px-3 py-1 rounded-lg font-black uppercase hover:bg-indigo-600 hover:text-white transition-all"
+                                                                >
+                                                                    Fix
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        // --- VISTA GENÉRICA (VENTAS / GASTOS) ---
+                        <div className="max-h-[400px] overflow-auto custom-scrollbar">
+                            <table className="w-full text-left text-xs">
+                                <thead className="bg-white text-slate-400 sticky top-0 uppercase font-black text-[9px] tracking-widest border-b border-slate-100">
+                                    <tr>
+                                        <th className="p-6">Fecha/Hora</th>
+                                        <th className="p-6">Identificador</th>
+                                        <th className="p-6">Origen / Tercero</th>
+                                        <th className="p-6 text-right">Monto Neto</th>
+                                        <th className="p-6 text-center">Detalle</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-50">
+                                    {results.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={5} className="p-12 text-center text-slate-400 font-bold italic uppercase tracking-widest text-[10px]">No hay registros en esta categoría</td>
+                                        </tr>
+                                    ) : (
+                                        results.map((r, i) => (
+                                            <tr key={i} className="hover:bg-slate-50 transition-colors group">
+                                                <td className="p-6 font-bold text-slate-500">{r.fec || r.emissionDate ? format(new Date(r.fec || r.emissionDate), 'dd/MM HH:mm') : '-'}</td>
+                                                <td className="p-6"><span className="font-mono font-black text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg text-[10px]">{r.cod || r.number || r.codification || 'S/N'}</span></td>
+                                                <td className="p-6 font-bold text-slate-900 truncate max-w-[250px]">
+                                                    <button
+                                                        onClick={() => setSelectedProduct({
+                                                            name: r.productName || r.cli || '',
+                                                            barcode: r.barcode || '',
+                                                            category: r.category || '',
+                                                            manufacturer: r.manufacturer || ''
+                                                        })}
+                                                        className="hover:text-indigo-600 transition-colors text-left"
+                                                    >
+                                                        {r.productName || r.cli || r.supplier?.name || (r.healthInsuranceProvider?.name || r.entity?.name) || 'Particular'}
+                                                    </button>
+                                                </td>
+                                                <td className="p-6 text-right font-black text-slate-900">{formatMoney(r.tot || r.totalAmount || r.mainAmount)}</td>
+                                                <td className="p-6 text-center">
+                                                    <button onClick={() => { setAuditResult(r); setShowInspector(true); }} className="p-2.5 bg-slate-100 rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all shadow-sm group-hover:shadow-md"><Eye className="w-4 h-4" /></button>
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -922,6 +1511,87 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
                         </div>
                         <div className="p-6 bg-slate-50 border-t border-slate-100 flex justify-end">
                             <button onClick={() => setShowInspector(false)} className="px-8 py-3 bg-slate-900 text-white font-black text-xs rounded-2xl hover:bg-slate-800 transition-all shadow-xl shadow-slate-900/20">ENTENDIDO</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* MODAL CATEGORIZACIÓN MANUAL */}
+            {selectedProduct && (
+                <div className="fixed inset-0 z-[110] flex items-center justify-center p-6 bg-slate-900/90 backdrop-blur-md animate-in fade-in duration-300">
+                    <div className="bg-white w-full max-w-lg rounded-[40px] overflow-hidden shadow-2xl scale-in-center border-4 border-white">
+                        <div className="p-10">
+                            <div className="flex items-center gap-4 mb-8">
+                                <div className="p-4 bg-indigo-600 rounded-3xl text-emerald-400 shadow-xl shadow-indigo-200">
+                                    <Layers className="w-8 h-8 text-white" />
+                                </div>
+                                <div className="flex-1">
+                                    <h3 className="font-black text-slate-900 text-xl uppercase tracking-tight">Categorizar Producto</h3>
+                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Vincular rubro maestro permanentemente</p>
+                                </div>
+                                <button onClick={() => setSelectedProduct(null)} className="p-2 hover:bg-slate-100 rounded-xl transition-all"><X className="w-6 h-6 text-slate-400" /></button>
+                            </div>
+
+                            <div className="space-y-6">
+                                <div>
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Nombre del Producto</label>
+                                    <input
+                                        type="text"
+                                        value={selectedProduct.name}
+                                        readOnly
+                                        className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-5 py-4 text-sm font-bold text-slate-500 outline-none cursor-not-allowed"
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Código de Barras</label>
+                                        <input
+                                            type="text"
+                                            value={selectedProduct.barcode}
+                                            onChange={e => setSelectedProduct({ ...selectedProduct, barcode: e.target.value })}
+                                            className="w-full bg-white border border-slate-200 rounded-2xl px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Fabricante / Lab</label>
+                                        <input
+                                            type="text"
+                                            value={selectedProduct.manufacturer}
+                                            onChange={e => setSelectedProduct({ ...selectedProduct, manufacturer: e.target.value.toUpperCase() })}
+                                            className="w-full bg-white border border-slate-200 rounded-2xl px-5 py-4 text-sm font-bold text-slate-900 outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest block mb-2">Rubro / Categoría Final</label>
+                                    <input
+                                        type="text"
+                                        value={selectedProduct.category}
+                                        onChange={e => setSelectedProduct({ ...selectedProduct, category: e.target.value.toUpperCase() })}
+                                        placeholder="Ej: PERFUMERIA, ANTIBIOTICOS, etc."
+                                        className="w-full bg-indigo-50 border border-indigo-100 rounded-2xl px-5 py-4 text-lg font-black text-indigo-900 outline-none focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder:text-indigo-200"
+                                        autoFocus
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="mt-10 flex gap-4">
+                                <button
+                                    onClick={() => setSelectedProduct(null)}
+                                    className="flex-1 py-5 rounded-3xl font-black text-xs uppercase tracking-widest text-slate-500 hover:bg-slate-50 transition-all"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    onClick={handleSaveManualCategory}
+                                    disabled={isSavingProduct || !selectedProduct.category}
+                                    className="flex-[2] py-5 bg-indigo-600 text-white rounded-3xl font-black text-xs uppercase tracking-widest shadow-2xl shadow-indigo-200 hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {isSavingProduct ? 'Guardando...' : 'Guardar en Maestro'}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

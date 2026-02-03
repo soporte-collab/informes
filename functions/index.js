@@ -27,6 +27,28 @@ async function syncZettiLive() {
     const todayStart = new Date(now);
     todayStart.setHours(0, 0, 0, 0);
 
+    // 🧹 LIMPIEZA: Borrar ventas de días anteriores
+    console.log("[SYNC] 🧹 Limpiando ventas antiguas...");
+    try {
+        const oldSalesSnapshot = await db.collection('zetti_responses')
+            .where('type', '==', 'hourly_sale')
+            .where('syncedAt', '<', admin.firestore.Timestamp.fromDate(todayStart))
+            .limit(500)
+            .get();
+
+        if (!oldSalesSnapshot.empty) {
+            const deleteBatch = db.batch();
+            oldSalesSnapshot.docs.forEach(doc => deleteBatch.delete(doc.ref));
+            await deleteBatch.commit();
+            console.log(`[SYNC] ✅ ${oldSalesSnapshot.size} ventas antiguas eliminadas.`);
+        } else {
+            console.log("[SYNC] ✅ No hay ventas antiguas para limpiar.");
+        }
+    } catch (cleanupError) {
+        console.error("[SYNC] ⚠️ Error en limpieza:", cleanupError.message);
+        // Continuar con el sync aunque falle la limpieza
+    }
+
     const startDate = formatZettiLiveDate(todayStart);
     const endDate = formatZettiLiveDate(now);
 
@@ -86,9 +108,7 @@ async function syncZettiLive() {
                             name: prodName,
                             barcode: barcode,
                             productId: item.product?.id || null,
-                            lastSeen: admin.firestore.FieldValue.serverTimestamp(),
-                            rubro: null,
-                            potencia: null
+                            lastSeen: admin.firestore.FieldValue.serverTimestamp()
                         }, { merge: true }).catch(e => console.error("Error saving master product:", e));
                     }
                     // ------------------------------------------------
@@ -141,6 +161,8 @@ async function syncZettiLive() {
 
     return summary;
 }
+
+// exports.zetti_hourly_sync = ... (Commented out for safety)
 
 // Mapeo Centralizado de IDs de Zetti
 const NODOS = {
@@ -224,9 +246,11 @@ exports.zetti_tunnel_v4 = functions
                     const includeItems = body.includeItems !== false;
                     const lightMode = body.lightMode === true;
 
-                    // Ajustamos URL según necesidad
-                    let finalUrl = url;
-                    if (lightMode) {
+                    // Ajustamos URL según opciones del payload
+                    let finalUrl = `${ZETTI_CONFIG.api_url}/v2/${nodeId}/sales-receipts/search?include_items=${body.includeItems !== false}&include_agreements=${body.includeAgreements !== false}`;
+
+                    if (body.includeConcepts) finalUrl += '&include_concepts=true';
+                    if (body.lightMode) {
                         finalUrl = `${ZETTI_CONFIG.api_url}/v2/${nodeId}/sales-receipts/search?include_items=false&include_relations=false&include_agreements=true`;
                     }
 
@@ -236,32 +260,68 @@ exports.zetti_tunnel_v4 = functions
 
                             // 🏗️ CONSTRUCCIÓN LIMPIA DEL BODY (Solo filtros aceptados)
                             const cleanBody = {};
-                            const rawStart = body.startDate || body.emissionDateFrom;
-                            const rawEnd = body.endDate || body.emissionDateTo;
+                            const rawStart = body.startDate || body.emissionDateFrom; // Estos ya vienen procesados arriba pero por seguridad
 
-                            if (rawStart) cleanBody.emissionDateFrom = formatZettiDate(rawStart, false);
-                            if (rawEnd) cleanBody.emissionDateTo = formatZettiDate(rawEnd, true);
+                            // Re-validamos que las fechas estén en formato Zetti (YYYY-MM-DDTHH:mm:ss...)
+                            // body.emissionDateFrom ya fue formateado en líneas 213-214
+                            cleanBody.emissionDateFrom = body.emissionDateFrom;
+                            cleanBody.emissionDateTo = body.emissionDateTo;
+                            // Agregamos filtro de cliente si viene (para manual audit)
+                            if (body.idEntity) cleanBody.idEntity = body.idEntity;
 
-                            console.log(`[TUNNEL V12] ${nodeId} Pág ${page} URL: ${paginatedUrl} Body: ${JSON.stringify(cleanBody)}`);
+                            console.log(`[TUNNEL V13] ${nodeId} Pág ${page} URL: ${paginatedUrl}`);
 
                             const res = await retryAxios({
                                 method: 'post',
                                 url: paginatedUrl,
                                 data: cleanBody,
-                                headers: { 'Authorization': `Bearer ${token}` },
-                                timeout: 120000
+                                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                                timeout: 60000
                             });
 
-                            const data = res.data;
-                            const pageContent = Array.isArray(data) ? data : (data?.content || []);
+                            const items = res.data?.content || res.data || [];
 
-                            if (pageContent.length === 0) {
-                                console.log(`[TUNNEL V12] ${nodeId} - Pág ${page} vacía.`);
-                                break;
+                            // --- SMART ENRICHMENT FOR DEEP AUDITS ---
+                            // Si estamos en modo "Explorar OS" (includeAgreements=true),
+                            // buscamos el detalle COMPLETO de las que tienen Recetas para sacar los montos de "operations".
+                            if (body.includeAgreements && items.length > 0) {
+                                console.log(`[ENRICH] Analizando ${items.length} items para enriquecimiento profundo...`);
+                                const itemsToEnrich = items.filter(it =>
+                                    (it.agreements || []).some(a => a.valueType?.name === 'Receta' || a.name === 'Receta' || (a.mainAmount || 0) === 0)
+                                );
+
+                                if (itemsToEnrich.length > 0) {
+                                    console.log(`[ENRICH] Enriqueciendo ${itemsToEnrich.length} facturas con detalle de operaciones...`);
+                                    await Promise.all(itemsToEnrich.map(async (it) => {
+                                        try {
+                                            const detailUrl = `${ZETTI_CONFIG.api_url}/v2/${nodeId}/sales-receipts/${it.id}?include_items=true&include_relations=true&include_agreements=true&include_concepts=true&include_completed=true&include_others=true`;
+                                            const detailRes = await axios.get(detailUrl, {
+                                                headers: { 'Authorization': `Bearer ${token}` },
+                                                timeout: 10000
+                                            });
+                                            if (detailRes.data) {
+                                                // Mezclamos la info vital (agreements y operations) en el item original
+                                                it.agreements = detailRes.data.agreements || it.agreements;
+                                                it.operations = detailRes.data.operations || [];
+                                                it._enriched = true;
+                                            }
+                                        } catch (e) {
+                                            console.warn(`[ENRICH WARN] Falló detalle para ${it.id}: ${e.message}`);
+                                        }
+                                    }));
+                                }
+                            }
+                            // ----------------------------------------
+
+                            if (items.length > 0) {
+                                allItems = [...allItems, ...items];
+                                page++;
+                            } else {
+                                hasMore = false;
                             }
 
                             // 🎯 MAPEO ESTRICTO V13 (Incluye items simplificados para Performance) & ALIMENTAR MAESTRO
-                            const mapped = pageContent.map(inv => {
+                            const mapped = items.map(inv => {
                                 const items = (inv.items || []).map(it => {
                                     const prodName = it.product?.description || it.description || 'Producto';
                                     const barcode = it.barCode || it.product?.barCode || '';
@@ -273,9 +333,7 @@ exports.zetti_tunnel_v4 = functions
                                             name: prodName,
                                             barcode: barcode,
                                             productId: it.product?.id || null,
-                                            lastSeen: admin.firestore.FieldValue.serverTimestamp(),
-                                            rubro: null, // IMPORTANTE: Seteamos en null para que el enriquecedor lo encuentre
-                                            potencia: null
+                                            lastSeen: admin.firestore.FieldValue.serverTimestamp()
                                         }, { merge: true }).catch(e => console.error("Error feeding master:", e));
                                     }
 
@@ -283,8 +341,8 @@ exports.zetti_tunnel_v4 = functions
                                         id: it.id,
                                         nom: prodName,
                                         can: it.quantity || 1,
-                                        pre: it.unitPrice || 0,
-                                        sub: it.amount || 0,
+                                        pre: it.unitPrice || it.price || 0,
+                                        sub: it.totalPrice || it.amount || it.totalAmount || 0,
                                         bar: barcode,
                                         lab: it.product?.manufacturer?.description || 'Varios',
                                         cat: it.product?.category?.description || it.product?.group?.description || 'Varios'
@@ -296,14 +354,16 @@ exports.zetti_tunnel_v4 = functions
                                     cod: inv.codification || inv.number || 'S/N',
                                     tco: (inv.valueType?.name || 'FV').toUpperCase().includes('TRANSFER') ? 'TX' : (inv.valueType?.name || 'FV'),
                                     fec: inv.emissionDate || inv.creationDate,
-                                    tot: inv.mainAmount || inv.totalAmount || 0,
+                                    tot: inv.totalAmount || inv.mainAmount || inv.amount || 0,
                                     ven: inv.creationUser?.description || inv.creationUser?.alias || 'BIO',
                                     ent: inv.entityAgrupadora?.name || inv.healthInsurance?.name || 'Particular',
                                     cli: inv.customer?.name || (inv.customer?.firstName ? `${inv.customer.lastName} ${inv.customer.firstName}` : 'Particular'),
                                     pagos: (inv.agreements || []).map(a => ({
                                         t: a.type || 'Pago',
-                                        n: a.entity?.name || a.healthInsurance?.name || a.card?.name || a.codification || 'Contado'
+                                        n: a.entity?.name || a.healthInsurance?.name || a.card?.name || a.effective?.name || a.codification || 'Contado',
+                                        mainAmount: a.mainAmount || 0
                                     })),
+                                    operations: inv.operations || [],
                                     items: items
                                 };
                             });
@@ -313,9 +373,9 @@ exports.zetti_tunnel_v4 = functions
                             const uniqueFromPage = mapped.filter(f => !currentIds.has(f.id));
 
                             allItems = [...allItems, ...uniqueFromPage];
-                            console.log(`[TUNNEL V12] ${nodeId} recibidos ${pageContent.length}, acumulados únicos: ${allItems.length}`);
+                            console.log(`[TUNNEL V13] ${nodeId} recibidos ${items.length}, acumulados únicos: ${allItems.length}`);
 
-                            if (pageContent.length < 50) {
+                            if (items.length < 50) {
                                 hasMore = false;
                             } else {
                                 page++;
@@ -493,11 +553,15 @@ exports.zetti_tunnel_v4 = functions
  * SINCRONIZADOR HORARIO (Cron Job)
  * Actualiza las ventas de la última hora para alimentar el Ranking y Sugerencias
  */
+/**
+ * SINCRONIZADOR AUTOMÁTICO (Cron Job)
+ * Actualiza las ventas cada 15 minutos para que el Monitor Central esté siempre al día.
+ */
 exports.zetti_hourly_sync = functions.pubsub
-    .schedule('0 * * * *') // Cada hora al minuto 0
+    .schedule('*/15 * * * *') // Cada 15 minutos
     .timeZone('America/Argentina/Buenos_Aires')
     .onRun(async (context) => {
-        console.log("[CRON] Iniciando Sincronización Horaria...");
+        console.log("[CRON] Iniciando Sincronización Automática (15 min)...");
         return await syncZettiLive();
     });
 
@@ -629,226 +693,12 @@ async function searchProductEnriched(barcode, nodeId = '2378041') {
  * ENRIQUECIMIENTO DE PRODUCTOS (Trigger Firestore)
  * Escucha en zetti_enrich_requests/{requestId}
  */
-exports.zetti_enrich_products = functions
-    .runWith({ timeoutSeconds: 540, memory: '1GB' })
-    .firestore.document('zetti_enrich_requests/{requestId}')
-    .onCreate(async (snap, context) => {
-        const requestId = context.params.requestId;
-        console.log(`[ENRICH] >> START Request: ${requestId}`);
-
-        try {
-            // Buscamos productos que necesiten enriquecimiento (rubro == null o potencia == null)
-            const snapshot = await db.collection('zetti_products_master')
-                .where('potencia', '==', null)
-                .limit(200)
-                .get();
-
-            let docs = snapshot.docs;
-
-            if (snapshot.empty) {
-                console.log(`[ENRICH] No hay productos sin potencia. Buscando rubros null...`);
-                const snapshotRubro = await db.collection('zetti_products_master')
-                    .where('rubro', '==', null)
-                    .limit(200)
-                    .get();
-
-                if (snapshotRubro.empty) {
-                    await db.collection('zetti_enrich_responses').doc(requestId).set({
-                        message: "Base de datos ya está enriquecida.",
-                        count: 0,
-                        timestamp: admin.firestore.FieldValue.serverTimestamp()
-                    });
-                    console.log(`[ENRICH] << END (Nothing to enrich)`);
-                    return;
-                }
-                docs = snapshotRubro.docs;
-            }
-
-            console.log(`[ENRICH] Procesando ${docs.length} productos...`);
-
-            const productsToEnrich = docs.map(d => ({
-                id: d.id,
-                barcode: d.data().barcode,
-                productId: d.data().productId
-            })).filter(p => p.barcode && p.barcode !== 'N/A');
-
-            const token = await getZettiToken();
-            let updatedCount = 0;
-
-            for (let i = 0; i < productsToEnrich.length; i += 25) {
-                const batch = productsToEnrich.slice(i, i + 25);
-                const barcodes = batch.map(b => String(b.barcode));
-
-                console.log(`[ENRICH] Consultando Lote Zetti (${barcodes.length} barcodes)...`);
-
-                const url = `${ZETTI_CONFIG.api_url}/v2/2378041/products/search?include_groups=true`;
-                const res = await retryAxios({
-                    method: 'post',
-                    url: url,
-                    data: { barCodes: barcodes },
-                    headers: { 'Authorization': `Bearer ${token}` },
-                    timeout: 30000
-                });
-
-                const zettiResults = res.data.content || res.data || [];
-                const zettiMap = new Map();
-                zettiResults.forEach(p => {
-                    if (p.barCode) zettiMap.set(String(p.barCode), p);
-                    if (p.codifications) {
-                        p.codifications.forEach(c => {
-                            if (c.type === 'BARCODE') zettiMap.set(String(c.codification), p);
-                        });
-                    }
-                });
-
-                const pIdsToQuery = batch.map(b => {
-                    const fromZetti = zettiMap.get(String(b.barcode));
-                    return b.productId || (fromZetti ? fromZetti.id : null);
-                }).filter(id => id != null);
-
-                let stockMap = new Map();
-                if (pIdsToQuery.length > 0) {
-                    try {
-                        const stockRes = await axios.post(`${ZETTI_CONFIG.api_url}/2378039/products/details-per-nodes`, {
-                            idsNodos: [2378041, 2406943],
-                            idsProductos: pIdsToQuery.map(Number)
-                        }, { headers: { 'Authorization': `Bearer ${token}` }, timeout: 30000 });
-
-                        const stockData = Array.isArray(stockRes.data) ? stockRes.data : [];
-                        stockData.forEach(item => {
-                            const pid = item.idProducto;
-                            if (!stockMap.has(pid)) stockMap.set(pid, { bio: 0, chacras: 0, price: 0 });
-                            const info = stockMap.get(pid);
-                            if (item.idNodo === 2378041) info.bio = item.detalles?.stock || 0;
-                            if (item.idNodo === 2406943) info.chacras = item.detalles?.stock || 0;
-                            if (item.idNodo === 2378041) info.price = item.detalles?.price || 0;
-                        });
-                    } catch (e) {
-                        console.error("[ENRICH] Error stock:", e.message);
-                    }
-                }
-
-                const dbBatch = db.batch();
-                let batchUpdates = 0;
-
-                for (const prod of batch) {
-                    const zettiProd = zettiMap.get(String(prod.barcode));
-                    if (zettiProd) {
-                        const updates = {
-                            enrichedAt: admin.firestore.FieldValue.serverTimestamp(),
-                            productId: zettiProd.id
-                        };
-
-                        if (zettiProd.groups && Array.isArray(zettiProd.groups)) {
-                            let rubro = 'Varios', familia = 'Varios', fabricante = 'Zetti', marca = 'N/A';
-                            let droga = 'N/A', potencia = '', pUM = '', cantidad = '', cUM = '', forma = '';
-
-                            zettiProd.groups.forEach(g => {
-                                const type = (g.groupType?.name || '').toUpperCase();
-                                if (type === 'RUBRO') rubro = g.name;
-                                if (type === 'FAMILIA') familia = g.name;
-                                if (type === 'FABRICANTE' || type === 'LABORATORIO') fabricante = g.name;
-                                if (type === 'MARCA') marca = g.name;
-                                if (type === 'DROGA') droga = g.name;
-                                if (type === 'POTENCIA') potencia = g.name;
-                                if (type === 'POTENCIA U.M.') pUM = g.name;
-                                if (type === 'CANTIDAD') cantidad = g.name;
-                                if (type === 'CANTIDAD U.M.') cUM = g.name;
-                                if (type === 'FORMA') forma = g.name;
-                            });
-
-                            updates.rubro = rubro;
-                            updates.category = rubro;
-                            updates.family = familia;
-                            updates.manufacturer = fabricante;
-                            updates.brand = marca;
-                            updates.monodrug = droga;
-                            updates.potencia = potencia ? `${potencia}${pUM}` : 'N/A';
-                            updates.cantidad = cantidad ? parseInt(cantidad) : 1;
-                            updates.forma = forma;
-                            updates.full_spec = `${droga} ${potencia}${pUM} x${cantidad}`;
-                        }
-
-                        const info = stockMap.get(Number(zettiProd.id));
-                        if (info) {
-                            updates.stockBio = info.bio;
-                            updates.stockChacras = info.chacras;
-                            updates.price = info.price;
-                            updates.stockUpdatedAt = admin.firestore.FieldValue.serverTimestamp();
-                        }
-
-                        const ref = db.collection('zetti_products_master').doc(prod.id);
-                        dbBatch.update(ref, updates);
-                        batchUpdates++;
-                        updatedCount++;
-                    }
-                }
-
-                if (batchUpdates > 0) {
-                    await dbBatch.commit();
-                }
-            }
-
-            // -------------------------------------------------------------------------
-            // RECURSIVIDAD: Si procesamos el máximo (200) y todavía quedan productos, 
-            // creamos una nueva solicitud para seguir la cadena automáticamente.
-            // -------------------------------------------------------------------------
-            const nextSnapshot = await db.collection('zetti_products_master')
-                .where('potencia', '==', null)
-                .limit(1)
-                .get();
-
-            let isFinished = true;
-            if (!nextSnapshot.empty) {
-                isFinished = false;
-                console.log(`[ENRICH] 🔂 Quedan más productos. Re-encolando proceso...`);
-                await db.collection('zetti_enrich_requests').add({
-                    timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                    type: 'recursive',
-                    parentRequestId: requestId
-                });
-            } else {
-                console.log(`[ENRICH] ✅ No más productos sin potencia. Verificando rubros null...`);
-                const nextSnapshotRubro = await db.collection('zetti_products_master')
-                    .where('rubro', '==', null)
-                    .limit(1)
-                    .get();
-
-                if (!nextSnapshotRubro.empty) {
-                    isFinished = false;
-                    await db.collection('zetti_enrich_requests').add({
-                        timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                        type: 'recursive',
-                        parentRequestId: requestId
-                    });
-                }
-            }
-
-            // Si terminamos la cadena o en cada batch (si queremos ver progreso real), 
-            // lanzamos la reparación de la base histórica en Storage.
-            if (isFinished || updatedCount > 50) {
-                console.log(`[ENRICH] 🛠️ Propagando cambios a Base Histórica (JSON)...`);
-                await repairHistoricalCategoriesLogic();
-            }
-
-            await db.collection('zetti_enrich_responses').doc(requestId).set({
-                message: isFinished ?
-                    `Enriquecimiento FINALIZADO. ${updatedCount} actualizados.` :
-                    `Batch completado (${updatedCount}). Continuando en segundo plano...`,
-                count: updatedCount,
-                isFinished: isFinished,
-                timestamp: admin.firestore.FieldValue.serverTimestamp()
-            });
-
-            console.log(`[ENRICH] << END (Batch Updated ${updatedCount})`);
-        } catch (e) {
-            console.error(`[ENRICH] ERROR CRITICO:`, e);
-            await db.collection('zetti_enrich_responses').doc(requestId).set({
-                error: e.message,
-                timestamp: admin.firestore.FieldValue.serverTimestamp()
-            });
-        }
-    });
+// exports.zetti_enrich_products = functions
+//     .runWith({ timeoutSeconds: 540, memory: '1GB' })
+//     .firestore.document('zetti_enrich_requests/{requestId}')
+//     .onCreate(async (snap, context) => {
+//         ... (logic disabled)
+//     });
 
 /**
  * 🛠️ LÓGICA DE REPARACIÓN DE RUBROS
@@ -919,24 +769,12 @@ async function repairHistoricalCategoriesLogic() {
 }
 
 // 🛠️ REPARACIÓN DE CATEGORÍAS (Trigger Firestore - Anti CORS)
-exports.zetti_repair_categories_trigger = functions
-    .runWith({ timeoutSeconds: 540, memory: '1GB' })
-    .firestore.document('zetti_repair_requests/{requestId}')
-    .onCreate(async (snap, context) => {
-        const requestId = context.params.requestId;
-        try {
-            const result = await repairHistoricalCategoriesLogic();
-            await db.collection('zetti_repair_responses').doc(requestId).set({
-                ...result,
-                timestamp: admin.firestore.FieldValue.serverTimestamp()
-            });
-        } catch (e) {
-            await db.collection('zetti_repair_responses').doc(requestId).set({
-                error: e.message,
-                timestamp: admin.firestore.FieldValue.serverTimestamp()
-            });
-        }
-    });
+// exports.zetti_repair_categories_trigger = functions
+//     .runWith({ timeoutSeconds: 540, memory: '1GB' })
+//     .firestore.document('zetti_repair_requests/{requestId}')
+//     .onCreate(async (snap, context) => {
+//         ... (logic disabled)
+//     });
 
 // 🛰️ SEEDER DE BASE MAESTRA (Trigger Firestore - Anti CORS)
 exports.zetti_seed_master_trigger = functions
@@ -982,9 +820,7 @@ async function seedMasterLogic() {
             name: p.name,
             barcode: String(p.barcode),
             manufacturer: p.manufacturer || 'Varios',
-            lastSeen: admin.firestore.FieldValue.serverTimestamp(),
-            rubro: null,
-            potencia: null
+            lastSeen: admin.firestore.FieldValue.serverTimestamp()
         }, { merge: true });
 
         count++;
@@ -1124,9 +960,7 @@ async function syncDatabaseLogic(customStartDate, customEndDate) {
                     name: prodName,
                     barcode: barcode,
                     productId: item.product?.id || null,
-                    lastSeen: admin.firestore.FieldValue.serverTimestamp(),
-                    rubro: null, // Seteamos para enriquecimiento
-                    potencia: null
+                    lastSeen: admin.firestore.FieldValue.serverTimestamp()
                 }, { merge: true }).catch(err => console.error("Error saving master prod:", err));
             }
             // ------------------------------------
@@ -1389,20 +1223,19 @@ async function mergeAndSave(bucket, path, newRecords, dedupKey) {
     console.log(`[DB SYNC] Guardado ${path}: ${merged.length} registros (${newRecords.length} nuevos/act).`);
 }
 
-exports.zetti_sync_db_cron = functions.pubsub
-    .schedule('0 21 * * *')
-    .timeZone('America/Argentina/Buenos_Aires')
-    .onRun(async (context) => {
-        return await syncDatabaseLogic();
-    });
+// exports.zetti_sync_db_cron = functions.pubsub
+//     .schedule('0 21 * * *')
+//     .timeZone('America/Argentina/Buenos_Aires')
+//     .onRun(async (context) => {
+//         return await syncDatabaseLogic();
+//     });
 
-// 2. Cron Job Stock: Todos los días a las 03:00 AM
-exports.zetti_sync_stock_cron = functions.pubsub
-    .schedule('0 3 * * *')
-    .timeZone('America/Argentina/Buenos_Aires')
-    .onRun(async (context) => {
-        return await syncStockMasterLogic();
-    });
+// exports.zetti_sync_stock_cron = functions.pubsub
+//     .schedule('0 3 * * *')
+//     .timeZone('America/Argentina/Buenos_Aires')
+//     .onRun(async (context) => {
+//         return await syncStockMasterLogic();
+//     });
 
 // 2. HTTP Trigger Manual (Para el botón)
 // 2. HTTP Trigger Manual (Callable Function para evitar CORS)
@@ -1558,22 +1391,22 @@ async function enrichProductDataLogic() {
 }
 
 // 🧬 Trigger para enriquecimiento de productos
-exports.zetti_enrich_products_trigger = functions
+// exports.zetti_enrich_products_trigger = functions
+//     .runWith({ timeoutSeconds: 540, memory: '1GB' })
+//     .firestore.document('zetti_enrich_requests/{requestId}')
+//     .onCreate(async (snap, context) => {
+//         ... (logic disabled)
+//     });
+
+exports.zetti_sync_live_callable = functions
     .runWith({ timeoutSeconds: 540, memory: '1GB' })
-    .firestore.document('zetti_enrich_requests/{requestId}')
-    .onCreate(async (snap, context) => {
-        const requestId = context.params.requestId;
+    .https.onCall(async (data, context) => {
         try {
-            const result = await enrichProductDataLogic();
-            await db.collection('zetti_enrich_responses').doc(requestId).set({
-                ...result,
-                timestamp: admin.firestore.FieldValue.serverTimestamp()
-            });
+            console.log("[CALLABLE] Iniciando Sincronización Live solicitada por frontend...");
+            const summary = await syncZettiLive();
+            return summary;
         } catch (error) {
-            await db.collection('zetti_enrich_responses').doc(requestId).set({
-                error: error.message,
-                timestamp: admin.firestore.FieldValue.serverTimestamp()
-            });
+            console.error("[CALLABLE ERROR] Live Sync:", error);
+            throw new functions.https.HttpsError('internal', error.message);
         }
     });
-

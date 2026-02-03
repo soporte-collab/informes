@@ -70,11 +70,17 @@ export const callZettiAPI = async (type: string, payload: any, nodeId: string = 
     throw lastError || new Error(`Error fatal tras ${retries} reintentos en ${type}`);
 };
 
-export const searchZettiInvoices = async (startDate: string, endDate: string, nodeId: string, lightMode: boolean = false) => {
+export const searchZettiInvoices = async (startDate: string, endDate: string, nodeId: string, options: {
+    lightMode?: boolean;
+    includeAgreements?: boolean;
+    includeConcepts?: boolean;
+} = {}) => {
     return callZettiAPI('SEARCH_INVOICES', {
         startDate,
         endDate,
-        includeItems: !lightMode
+        includeItems: !options.lightMode,
+        includeAgreements: options.includeAgreements ?? true, // Default to true as it's useful
+        includeConcepts: options.includeConcepts ?? false
     }, nodeId);
 };
 
@@ -85,16 +91,18 @@ export const searchZettiInvoiceByNumber = async (codification: string, branch: '
 
 // Función antigua para mantener compatibilidad si algo la llama
 export const enriquecerInvoicesConProductos = async (startDate: string, endDate: string, nodeId: string) => {
-    return searchZettiInvoices(startDate, endDate, nodeId, false);
+    return searchZettiInvoices(startDate, endDate, nodeId, { lightMode: false });
 };
 
 export const triggerManualSync = async () => {
-    // Usamos el nuevo nombre de la función para evitar el error de cambio de trigger de Firebase
-    const response = await fetch('https://us-central1-informes-a551f.cloudfunctions.net/zetti_sync_live_v2');
-    if (!response.ok) {
-        throw new Error(`Error en sincronización: ${response.statusText}`);
+    try {
+        const syncCallable = httpsCallable(functions, 'zetti_sync_live_callable');
+        const result = await syncCallable();
+        return result.data;
+    } catch (error) {
+        console.error("Error in triggerManualSync:", error);
+        throw error;
     }
-    return response.json();
 };
 
 export const getProductFromMaster = async (id: string) => {

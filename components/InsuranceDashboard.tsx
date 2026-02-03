@@ -4,7 +4,7 @@ import { InsuranceRecord, ExpenseItem } from '../types';
 import { formatMoney } from '../utils/dataHelpers';
 import {
     ShieldCheck, Calendar, Filter, Search, ChevronDown, ChevronRight,
-    Package, TrendingUp, CheckCircle, Clock, ListFilter, Download, Plus, FileSpreadsheet
+    Package, TrendingUp, CheckCircle, Clock, ListFilter, Download, Plus, FileSpreadsheet, Trash2
 } from 'lucide-react';
 import { format, isWithinInterval } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -26,12 +26,18 @@ export const InsuranceDashboard: React.FC<InsuranceDashboardProps> = ({
     onEndDateChange,
     onUploadInsurance
 }) => {
+    const [selectedOS, setSelectedOS] = useState('all');
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedBranch, setSelectedBranch] = useState('all');
     const [selectedMonth, setSelectedMonth] = useState('all');
     const [selectedStatus, setSelectedStatus] = useState('all');
     const [showFilters, setShowFilters] = useState(false);
     const [expandedRecordId, setExpandedRecordId] = useState<string | null>(null);
+
+    const uniqueOSList = useMemo(() => {
+        const os = new Set((data || []).map(d => d.entity));
+        return Array.from(os).sort();
+    }, [data]);
 
     const filteredData = useMemo(() => {
         return (data || []).filter(d => {
@@ -40,6 +46,7 @@ export const InsuranceDashboard: React.FC<InsuranceDashboardProps> = ({
                 (d.items || []).some(item => item.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
             const matchBranch = selectedBranch === 'all' || d.branch === selectedBranch;
+            const matchOS = selectedOS === 'all' || d.entity === selectedOS;
             const matchMonth = selectedMonth === 'all' || d.monthYear === selectedMonth;
             const matchStatus = selectedStatus === 'all' || d.status === selectedStatus;
 
@@ -51,17 +58,18 @@ export const InsuranceDashboard: React.FC<InsuranceDashboardProps> = ({
                 matchDate = isWithinInterval(d.issueDate, { start, end });
             }
 
-            return matchSearch && matchBranch && matchMonth && matchStatus && matchDate;
+            return matchSearch && matchBranch && matchOS && matchMonth && matchStatus && matchDate;
         });
-    }, [data, searchTerm, selectedBranch, selectedMonth, selectedStatus, startDate, endDate]);
+    }, [data, searchTerm, selectedBranch, selectedOS, selectedMonth, selectedStatus, startDate, endDate]);
 
     const stats = useMemo(() => {
-        const total = filteredData.reduce((acc, curr) => acc + curr.amount, 0);
+        const totalOS = filteredData.reduce((acc, curr) => acc + curr.amount, 0);
+        const totalPatient = filteredData.reduce((acc, curr) => acc + (curr.patientAmount || 0), 0);
         const uniqueEntities = new Set(filteredData.map(d => d.entity)).size;
         const totalItems = filteredData.reduce((acc, curr) => acc + (curr.items?.length || 0), 0);
         const pendingValue = filteredData.filter(d => d.status !== 'LIQUIDADO').reduce((acc, curr) => acc + curr.amount, 0);
 
-        return { total, entities: uniqueEntities, totalItems, pendingValue };
+        return { totalOS, totalPatient, totalGross: totalOS + totalPatient, entities: uniqueEntities, totalItems, pendingValue };
     }, [filteredData]);
 
     const entityChartData = useMemo(() => {
@@ -107,50 +115,27 @@ export const InsuranceDashboard: React.FC<InsuranceDashboardProps> = ({
                 <div>
                     <h2 className="text-3xl font-black tracking-tighter text-rose-900">Módulo de Obras Sociales</h2>
                     <p className="text-slate-500 text-sm font-medium">Gestión de liquidaciones y validaciones de recetas</p>
-                    <div className="flex items-center gap-2 mt-2 bg-rose-50 border border-rose-100 px-3 py-1 rounded-full w-fit">
-                        <span className="text-[10px] font-black text-rose-600 uppercase">Referencia: Extracción MENU 4.5.2</span>
-                    </div>
                 </div>
                 <div className="flex gap-2">
                     <button
-                        onClick={onUploadInsurance}
+                        onClick={exportToCSV}
                         className="bg-rose-600 text-white px-6 py-3 rounded-2xl text-sm font-black hover:bg-rose-700 transition-all flex items-center gap-2 shadow-lg shadow-rose-200"
                     >
-                        <Plus className="w-4 h-4" /> Agregar Recetas (4.5.2)
-                    </button>
-                    <button
-                        onClick={exportToCSV}
-                        className="bg-white border border-slate-200 text-slate-600 px-6 py-3 rounded-2xl text-sm font-black hover:bg-slate-50 transition-all flex items-center gap-2"
-                    >
-                        <Download className="w-4 h-4" /> Exportar CVS Parseado
+                        <Download className="w-4 h-4" /> Exportar Reporte CSV
                     </button>
                 </div>
             </div>
 
-            {/* Instruction Steps */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                {[
-                    { step: 1, text: "Elegir todos los tipos de valores asociados" },
-                    { step: 2, text: "Elegir fecha de emisión" },
-                    { step: 3, text: "Tildar: Mostrar Operaciones / Items / Por Nodo" },
-                    { step: 4, text: "Cargar CSV en BioSalud Live" }
-                ].map((s) => (
-                    <div key={s.step} className="bg-slate-50 border border-slate-200 p-4 rounded-2xl flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center font-black text-xs shrink-0">{s.step}</div>
-                        <p className="text-[11px] font-bold text-slate-600 uppercase tracking-tight">{s.text}</p>
-                    </div>
-                ))}
-            </div>
 
             {/* Stats Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 <div className="bg-white p-6 rounded-2xl border border-rose-100 shadow-sm">
                     <div className="flex items-center justify-between mb-2">
                         <div className="bg-rose-100 p-2 rounded-xl"><ShieldCheck className="w-6 h-6 text-rose-600" /></div>
-                        <span className="text-[10px] font-black text-rose-600">TOTAL</span>
+                        <span className="text-[10px] font-black text-rose-600">TOTAL O.S</span>
                     </div>
-                    <p className="text-gray-500 text-xs font-bold uppercase">Monto Bruto Recetas</p>
-                    <p className="text-2xl font-black text-slate-900 mt-1">{formatMoney(stats.total)}</p>
+                    <p className="text-gray-500 text-xs font-bold uppercase">Monto Cobertura O.S.</p>
+                    <p className="text-2xl font-black text-slate-900 mt-1">{formatMoney(stats.totalOS)}</p>
                 </div>
                 <div className="bg-white p-6 rounded-2xl border border-blue-100 shadow-sm">
                     <div className="flex items-center justify-between mb-2">
@@ -171,10 +156,10 @@ export const InsuranceDashboard: React.FC<InsuranceDashboardProps> = ({
                 <div className="bg-white p-6 rounded-2xl border border-emerald-100 shadow-sm">
                     <div className="flex items-center justify-between mb-2">
                         <div className="bg-emerald-100 p-2 rounded-xl"><CheckCircle className="w-6 h-6 text-emerald-600" /></div>
-                        <span className="text-[10px] font-black text-emerald-600">ENTIDADES</span>
+                        <span className="text-[10px] font-black text-emerald-600">CLIENTES</span>
                     </div>
-                    <p className="text-gray-500 text-xs font-bold uppercase">Obras Sociales Activas</p>
-                    <p className="text-2xl font-black text-slate-900 mt-1">{stats.entities}</p>
+                    <p className="text-gray-500 text-xs font-bold uppercase">A cargo Pacientes</p>
+                    <p className="text-2xl font-black text-slate-900 mt-1">{formatMoney(stats.totalPatient)}</p>
                 </div>
             </div>
 
@@ -199,28 +184,48 @@ export const InsuranceDashboard: React.FC<InsuranceDashboardProps> = ({
                     </button>
                 </div>
                 {showFilters && (
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4 border-t border-slate-50 animate-in slide-in-from-top-2">
-                        <div>
-                            <label className="text-xs font-black text-slate-400 uppercase mb-2 block tracking-wider">Fecha Emisión</label>
-                            <div className="grid grid-cols-2 gap-2">
-                                <input type="date" value={startDate} onChange={(e) => onStartDateChange(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs" />
-                                <input type="date" value={endDate} onChange={(e) => onEndDateChange(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs" />
+                    <div className="pt-4 border-t border-slate-50 animate-in slide-in-from-top-2">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-4">
+                            <div>
+                                <label className="text-xs font-black text-slate-400 uppercase mb-2 block tracking-wider">Fecha Emisión</label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <input type="date" value={startDate} onChange={(e) => onStartDateChange(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs" />
+                                    <input type="date" value={endDate} onChange={(e) => onEndDateChange(e.target.value)} className="bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs" />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="text-xs font-black text-slate-400 uppercase mb-2 block tracking-wider">Obra Social</label>
+                                <select value={selectedOS} onChange={(e) => setSelectedOS(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs uppercase font-bold">
+                                    <option value="all">Todas las O.S.</option>
+                                    {uniqueOSList.map(os => <option key={os} value={os}>{os}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-xs font-black text-slate-400 uppercase mb-2 block tracking-wider">Sucursal</label>
+                                <select value={selectedBranch} onChange={(e) => setSelectedBranch(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs uppercase font-bold">
+                                    <option value="all">Todas las Sucursales</option>
+                                    <option value="FCIA BIOSALUD">FCIA BIOSALUD</option>
+                                    <option value="CHACRAS">CHACRAS PARK</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-xs font-black text-slate-400 uppercase mb-2 block tracking-wider">Estado Trámite</label>
+                                <select value={selectedStatus} onChange={(e) => setSelectedStatus(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs uppercase font-bold">
+                                    <option value="all">Todos los Estados</option>
+                                    {Array.from(new Set((data || []).map(d => d.status))).map(s => <option key={s} value={s}>{s}</option>)}
+                                </select>
                             </div>
                         </div>
-                        <div>
-                            <label className="text-xs font-black text-slate-400 uppercase mb-2 block tracking-wider">Sucursal</label>
-                            <select value={selectedBranch} onChange={(e) => setSelectedBranch(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs">
-                                <option value="all">Todas las Sucursales</option>
-                                {Array.from(new Set((data || []).map(d => d.branch))).map(b => <option key={b} value={b}>{b}</option>)}
-                            </select>
-                        </div>
-                        <div>
-                            <label className="text-xs font-black text-slate-400 uppercase mb-2 block tracking-wider">Estado Trámite</label>
-                            <select value={selectedStatus} onChange={(e) => setSelectedStatus(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs">
-                                <option value="all">Todos los Estados</option>
-                                {Array.from(new Set((data || []).map(d => d.status))).map(s => <option key={s} value={s}>{s}</option>)}
-                            </select>
-                        </div>
+                        {(selectedOS !== 'all' || selectedBranch !== 'all' || selectedStatus !== 'all' || searchTerm) && (
+                            <div className="flex justify-end">
+                                <button
+                                    onClick={() => { setSelectedOS('all'); setSelectedBranch('all'); setSelectedStatus('all'); setSearchTerm(''); }}
+                                    className="text-[10px] font-black text-rose-600 uppercase flex items-center gap-1 hover:text-rose-800 transition-colors"
+                                >
+                                    <Trash2 className="w-3 h-3" /> Limpiar Filtros
+                                </button>
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
@@ -237,8 +242,10 @@ export const InsuranceDashboard: React.FC<InsuranceDashboardProps> = ({
                             <tr className="text-slate-400 font-bold border-b border-slate-100 bg-white">
                                 <th className="px-6 py-4">F. EMISIÓN</th>
                                 <th className="px-6 py-4">ENTIDAD (O.S)</th>
-                                <th className="px-6 py-4">COMPROBANTE</th>
-                                <th className="px-6 py-4 text-right">MONTO</th>
+                                <th className="px-6 py-4">AFILIADO / PLAN</th>
+                                <th className="px-6 py-4 text-right">TOTAL</th>
+                                <th className="px-6 py-4 text-right">A CARGO O.S</th>
+                                <th className="px-6 py-4 text-right">A CARGO PAC.</th>
                                 <th className="px-6 py-4">ESTADO</th>
                                 <th className="px-6 py-4 w-10"></th>
                             </tr>
@@ -252,8 +259,13 @@ export const InsuranceDashboard: React.FC<InsuranceDashboardProps> = ({
                                     >
                                         <td className="px-6 py-4 text-slate-600 font-bold">{format(record.issueDate, 'dd/MM/yyyy')}</td>
                                         <td className="px-6 py-4 font-black text-slate-900 group-hover:text-rose-600 transition-colors uppercase italic">{record.entity}</td>
-                                        <td className="px-6 py-4 font-mono text-xs text-slate-400 tracking-tighter">{record.code}</td>
-                                        <td className="px-6 py-4 text-right font-black text-slate-800">{formatMoney(record.amount)}</td>
+                                        <td className="px-6 py-4">
+                                            <div className="text-xs font-bold text-slate-700">{record.affiliate || '-'}</div>
+                                            <div className="text-[10px] text-slate-400 uppercase">{record.plan || '-'}</div>
+                                        </td>
+                                        <td className="px-6 py-4 text-right font-black text-slate-800">{formatMoney(record.totalVoucher || record.amount)}</td>
+                                        <td className="px-6 py-4 text-right font-black text-rose-600">{formatMoney(record.amount)}</td>
+                                        <td className="px-6 py-4 text-right font-bold text-emerald-600">{formatMoney(record.patientAmount || 0)}</td>
                                         <td className="px-6 py-4">
                                             <span className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase ${record.status === 'INGRESADO' ? 'bg-blue-50 text-blue-600 border border-blue-100' :
                                                 record.status === 'LIQUIDADO' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :

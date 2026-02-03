@@ -1,0 +1,35 @@
+{
+    "firestore": {
+        "indexes": [
+            {
+                "collectionGroup": "zetti_responses",
+                "queryScope": "COLLECTION",
+                "fields": [
+                    {
+                        "fieldPath": "type",
+                        "order": "ASCENDING"
+                    },
+                    {
+                        "fieldPath": "syncedAt",
+                        "order": "DESCENDING"
+                    }
+                ]
+            },
+            {
+                "collectionGroup": "zetti_responses",
+                "queryScope": "COLLECTION",
+                "fields": [
+                    {
+                        "fieldPath": "type",
+                        "order": "ASCENDING"
+                    },
+                    {
+                        "fieldPath": "issueDate",
+                        "order": "ASCENDING"
+                    }
+                ]
+            }
+        ],
+        "fieldOverrides": []
+    }
+}
