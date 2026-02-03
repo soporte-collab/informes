@@ -103,9 +103,17 @@ La API de Zetti reside en un servidor HTTP (`http://190.15.199.103:8089`) y no s
 - **Hallazgo API**: Se intentó buscar deuda vía `sales-receipts/search` filtrando por `idValueType: 22`, pero el endpoint devuelve 0 resultados. Esto sugiere que las Facturas de Venta (ID 197) se registran inicialmente con su propio ID, y la "Cuenta Corriente" es un *valor de pago* relacionado que vive en otro endpoint de Tesorería aún no identificado positivamente en V2.
 - **Estado Actual**: Se pausó la investigación de la API para priorizar la vuelta a la **Carga por CSV** en el dashboard de Cuentas Corrientes.
 
+### 5. Sueldos, RRHH y Sincronización (03 de Febrero, 2026)
+- **Payroll (Sueldos & RRHH)**: Se reconstruyó el componente `PayrollDashboard.tsx` para corregir errores de anidamiento JSX que impedían su renderizado. Se implementaron tres sub-pestañas: **Legajos** (personal), **Fichadas** (asistencia via XLS) y **Eficiencia** (KPIs de venta).
+- **Mejoras en el Túnel Zetti**:
+  - **Detección de Montos**: Se ajustó la lógica en `functions/index.js` para capturar montos desde múltiples campos posibles (`totalAmount`, `mainAmount`, `amount`, `netAmount`) tanto en facturas como en ítems.
+  - **Corrección de Paginación**: Se arregló un bug crítico donde una variable indefinida (`pageContent`) cortaba la sincronización prematuramente después de la primera página.
+- **Robustez de Datos**: Se integró `parseCurrency` en el proceso de guardado para limpiar strings con comas decimales (formato AR) y asegurar que las métricas del dashboard operen con números reales.
+
 ## Pendientes / Próximos Pasos
-1. **Reactivar Carga CSV en Cta Cte**: El componente `CurrentAccountDashboard.tsx` tenía la función oculta o incompleta. Se debe habilitar el botón de importación.
-2. **Endpoint de Valores**: Si se retoma la API, buscar un endpoint que acepte `ValueRequestDTO` o similar para listar "Valores de tipo 22" directamente.
+1. **Investigar "Ventas Totales $0"**: A pesar de las mejoras, algunos reportes muestran transacciones pero monto total 0. Posiblemente por datos cacheados incorrectos o campos inconsistentes en el objeto `items` de Zetti. 
+2. **Purga y Re-sync**: Se recomienda al usuario purgar las fechas conflictivas (01/02 al 03/02) y volver a sincronizar para validar el fix de montos.
+3. **KPIs de Eficiencia**: Desarrollar la lógica de ventas por hora/empleado cruzando Fichadas con Ventas Zetti.
 
 ---
-*Última actualización: 02 de Febrero, 2026*
+*Última actualización: 03 de Febrero, 2026*
