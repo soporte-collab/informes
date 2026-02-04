@@ -1,0 +1,14 @@
+
+--- VALIDACIËN: RABINO, SOL ---
+Fec: 22/12/2025 | Ref: FV B0008-00011196 | Status: INGRESADO | Debit: 14504.0 | Credit: 0.0
+Fec: 23/12/2025 | Ref: FV B0008-00011270 | Status: INGRESADO | Debit: 26446.0 | Credit: 0.0
+Fec: 31/12/2025 | Ref: FV B0008-00011603 | Status: INGRESADO | Debit: 46627.0 | Credit: 0.0
+Fec: 31/12/2025 | Ref: FV B0008-00011604 | Status: INGRESADO | Debit: 42540.8 | Credit: 0.0
+Fec: 31/12/2025 | Ref: FV B0008-00011605 | Status: INGRESADO | Debit: 12387.96 | Credit: 0.0
+TOTAL DEUDA RABINO (MATH): 142505.76 (Debe dar 142.505,76)
+
+--- VALIDACIËN: TRANSFERENCIAS (TX) ---
+Ref: TX B0001-00000103 | Debit: 0.0 | Credit: 0.0 (Deben ser 0)
+Ref: TX B0001-00000104 | Debit: 0.0 | Credit: 0.0 (Deben ser 0)
+
+Done. Saved JSON for imports.

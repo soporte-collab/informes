@@ -219,6 +219,42 @@ export const InvoiceDashboard: React.FC<InvoiceDashboardProps> = ({
         });
     }, [data, startDate, endDate, selectedBranch, selectedEntity, selectedType, selectedPayment, excludedClients, includedClients]);
 
+    // ⚠️ REGLA DE ORO: Deduplicar datos filtrados y VALIDAR montos contra la suma de productos (Modal Logic)
+    const uniqueFilteredData = useMemo(() => {
+        // Pre-calcular sumas de productos por Comprobante+Sucursal
+        const salesMap = new Map<string, number>();
+        (salesData || []).forEach(s => {
+            const key = `${s.invoiceNumber}-${s.branch}`;
+            salesMap.set(key, (salesMap.get(key) || 0) + (Number(s.totalAmount) || 0));
+        });
+
+        const map = new Map<string, InvoiceRecord>();
+        filteredData.forEach(d => {
+            // Clave única por número, sucursal y tipo para evitar duplicados técnicos
+            const key = `${d.invoiceNumber}-${d.branch}-${d.type}`;
+            if (!map.has(key)) {
+                // MODAL LOGIC: Si hay productos para este comprobante, confiamos en su suma (Fuente Única de Verdad)
+                const productSum = salesMap.get(`${d.invoiceNumber}-${d.branch}`);
+                const typeUpper = (d.type || '').toUpperCase();
+                const isNC = typeUpper.includes('NC') || typeUpper.includes('CREDITO') || typeUpper.includes('DEVOLUCION');
+
+                let validatedAmount = Number(d.netAmount) || 0;
+
+                // Si encontramos productos vinculados, sobreescribimos el monto del header (que puede venir duplicado de Zetti)
+                if (productSum !== undefined && productSum > 0) {
+                    validatedAmount = isNC ? -Math.abs(productSum) : Math.abs(productSum);
+                    console.log(`[Validation] Invoice ${d.invoiceNumber}: Fixed ${d.netAmount} -> ${validatedAmount}`);
+                }
+
+                map.set(key, {
+                    ...d,
+                    netAmount: validatedAmount
+                });
+            }
+        });
+        return Array.from(map.values());
+    }, [filteredData, salesData]);
+
     // --- KPI CALCULATIONS ---
     const stats = useMemo(() => {
         let totalNet = 0;
@@ -227,14 +263,8 @@ export const InvoiceDashboard: React.FC<InvoiceDashboardProps> = ({
         let txAmount = 0;
         let discountTotal = 0;
 
-        // ⚠️ REGLA 5: Deduplicar por ID antes de procesar KPIs
-        const uniqueInvoices = new Map<string, InvoiceRecord>();
-        filteredData.forEach(d => {
-            if (!uniqueInvoices.has(d.id)) uniqueInvoices.set(d.id, d);
-        });
-
-        // ⚠️ REGLA FINAL: Sumar solo lo deduplicado
-        uniqueInvoices.forEach(d => {
+        // ⚠️ REGLA FINAL: Sumar sobre datos deduplicados centralmente
+        uniqueFilteredData.forEach(d => {
             const type = (d.type || '').toUpperCase();
             const isNC = type.includes('NC') || type.includes('NOTA DE CREDITO');
             const isTX = type.includes('TX') || type.includes('TRANSFER');
@@ -256,12 +286,12 @@ export const InvoiceDashboard: React.FC<InvoiceDashboardProps> = ({
         const fvAmount = totalNet; // Alias for readability
 
         // --- DATA INTEGRITY (ORPHANS) ---
-        // Find invoices in filteredData (FV only) that have NO matching records in salesData
+        // Find invoices in uniqueFilteredData (FV only) that have NO matching records in salesData
         const salesInvoiceNumbers = new Set((salesData || []).map(s => s.invoiceNumber));
         let orphanCount = 0;
         let orphanAmount = 0;
 
-        filteredData.forEach(d => {
+        uniqueFilteredData.forEach(d => {
             const typeValue = (d.type || '').toUpperCase();
             const isNC = typeValue.includes('NC') || typeValue.includes('N.C') || typeValue.includes('N/C') || typeValue.includes('CREDITO') || typeValue.includes('DEVOLUCION');
             const isTX = typeValue.includes('TX') || typeValue.includes('TRANSFER') || typeValue.includes('REMITO') || typeValue.includes('TRSU');
@@ -326,11 +356,11 @@ export const InvoiceDashboard: React.FC<InvoiceDashboardProps> = ({
             momGrowth,
             prevTotal
         };
-    }, [filteredData, salesData, startDate, endDate, data, selectedBranch]);
+    }, [uniqueFilteredData, salesData, startDate, endDate, data, selectedBranch]);
 
     // Financial Heatmap Data Transformation
     const financialHeatmapData: any[] = useMemo(() => {
-        return filteredData
+        return uniqueFilteredData
             .filter(d => {
                 const typeValue = (d.type || '').toUpperCase();
                 return !(typeValue.includes('NC') || typeValue.includes('TX'));
@@ -351,14 +381,14 @@ export const InvoiceDashboard: React.FC<InvoiceDashboardProps> = ({
                 invoiceNumber: inv.invoiceNumber,
                 entity: inv.entity
             } as SaleRecord));
-    }, [filteredData]);
+    }, [uniqueFilteredData]);
 
     // --- BRANCH COMPARISON (Only when 'All' branches selected) ---
     const branchComparison = useMemo(() => {
         if (selectedBranch !== 'all') return null;
 
         const compMap = new Map<string, { value: number, count: number }>();
-        filteredData.forEach(d => {
+        uniqueFilteredData.forEach(d => {
             const typeValue = (d.type || '').toUpperCase();
             const isNC = typeValue.includes('NC') || typeValue.includes('CREDITO') || typeValue.includes('DEVOLUCION');
             const isTX = typeValue.includes('TX') || typeValue.includes('TRANSFER') || typeValue.includes('REMITO') || typeValue.includes('MOVIMIENTO') || typeValue.includes('TRSU');
@@ -378,14 +408,14 @@ export const InvoiceDashboard: React.FC<InvoiceDashboardProps> = ({
         });
 
         return Array.from(compMap.entries()).map(([name, data]) => ({ name, ...data }));
-    }, [filteredData, selectedBranch]);
+    }, [uniqueFilteredData, selectedBranch]);
 
     // --- CHARTS DATA ---
 
     // 1. Entities (excluding NC and TX)
     const entityData = useMemo(() => {
         const map = new Map<string, number>();
-        filteredData.forEach(d => {
+        uniqueFilteredData.forEach(d => {
             const typeValue = (d.type || '').toUpperCase();
             const isNC = typeValue.includes('NC') || typeValue.includes('CREDITO') || typeValue.includes('DEVOLUCION');
             const isTX = typeValue.includes('TX') || typeValue.includes('TRANSFER') || typeValue.includes('REMITO') || typeValue.includes('MOVIMIENTO') || typeValue.includes('TRSU');
@@ -398,12 +428,12 @@ export const InvoiceDashboard: React.FC<InvoiceDashboardProps> = ({
             .map(([name, value]) => ({ name, value }))
             .sort((a, b) => b.value - a.value)
             .slice(0, 8);
-    }, [filteredData]);
+    }, [uniqueFilteredData]);
 
     // 2. Insurance (Obra Social) - excluding NC and TX
     const insuranceData = useMemo(() => {
         const map = new Map<string, number>();
-        filteredData.forEach(d => {
+        uniqueFilteredData.forEach(d => {
             const typeValue = (d.type || '').toUpperCase();
             const isNC = typeValue.includes('NC') || typeValue.includes('CREDITO') || typeValue.includes('DEVOLUCION');
             const isTX = typeValue.includes('TX') || typeValue.includes('TRANSFER') || typeValue.includes('REMITO') || typeValue.includes('MOVIMIENTO') || typeValue.includes('TRSU');
@@ -416,11 +446,11 @@ export const InvoiceDashboard: React.FC<InvoiceDashboardProps> = ({
             .map(([name, value]) => ({ name, value }))
             .sort((a, b) => b.value - a.value)
             .slice(0, 10);
-    }, [filteredData]);
+    }, [uniqueFilteredData]);
 
     // --- TABLE DATA & PAGINATION ---
     const tableDataRaw = useMemo(() => {
-        return (filteredData || []).filter(d => {
+        return (uniqueFilteredData || []).filter(d => {
             const typeValue = d.type.toUpperCase();
             if (tableFilterMode === 'ALL') return true;
 
@@ -434,7 +464,7 @@ export const InvoiceDashboard: React.FC<InvoiceDashboardProps> = ({
 
             return typeValue.includes(tableFilterMode);
         });
-    }, [filteredData, tableFilterMode]);
+    }, [uniqueFilteredData, tableFilterMode]);
 
     // Available Entities and Months for the auditoría report
     const availableEntitiesReport = useMemo(() => {
@@ -675,7 +705,7 @@ export const InvoiceDashboard: React.FC<InvoiceDashboardProps> = ({
             )}
 
             <div className="mb-6">
-                <InvoiceTrendChart data={filteredData} dateRange={{ start: startDate, end: endDate }} />
+                <InvoiceTrendChart data={uniqueFilteredData} dateRange={{ start: startDate, end: endDate }} />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -794,7 +824,7 @@ export const InvoiceDashboard: React.FC<InvoiceDashboardProps> = ({
 
                 {/* Payment Methods Chart */}
                 <div className="xl:col-span-1">
-                    <InvoicePaymentChart data={filteredData} />
+                    <InvoicePaymentChart data={uniqueFilteredData} />
                 </div>
             </div>
 

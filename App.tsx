@@ -18,13 +18,14 @@ import { MixMaestroDashboard } from './components/MixMaestroDashboard';
 import { SellersDashboard } from './components/SellersDashboard';
 import { PayrollDashboard } from './components/PayrollDashboard';
 import { LiveDashboard } from './components/LiveDashboard';
+import { ManualImport } from './components/ManualImport';
 import { Activity, LogOut, Trash2, HardDrive, BarChart3, FileText, Radar, Upload, RefreshCw, ShoppingCart, Wallet, Lightbulb, CloudLightning, Blend, LayoutDashboard, Package, Users, Truck, Calendar, Menu, Printer, Banknote, ShieldCheck } from 'lucide-react';
 import {
     getAllSalesFromDB, saveSalesToDB, clearDB, saveInvoicesToDB, getAllInvoicesFromDB,
     getAllExpensesFromDB, saveExpensesToDB, getAllCurrentAccountsFromDB, saveCurrentAccountsToDB,
     saveStockToDB, getAllStockFromDB, saveInsuranceToDB, getAllInsuranceFromDB,
     getAllServicesFromDB, saveServicesToDB, getAllUnifiedFromDB, saveUnifiedToDB,
-    getAllPayrollFromDB,
+    getAllPayrollFromDB, getAllEmployeesFromDB, saveEmployeesToDB,
     clearCurrentAccountsDB, clearExpensesDB, clearSalesDB, clearInvoicesDB, clearStockDB, clearInsuranceDB, clearServicesDB,
     getMetadata, saveMetadata
 } from './utils/db';
@@ -147,7 +148,11 @@ const App: React.FC = () => {
                     totalDiscount: 0,
                     items: [],
                     hasStockDetail: hasStock,
-                    hasFinancialDetail: true
+                    hasFinancialDetail: true,
+                    cashAmount: 0,
+                    cardAmount: 0,
+                    osAmount: 0,
+                    ctacteAmount: 0
                 });
             }
 
@@ -336,6 +341,11 @@ const App: React.FC = () => {
                 const combinedServices = [...(data.expenses || []), ...(data.services || [])];
                 setServiceData(combinedServices);
             }
+            if (data.employees) {
+                await saveEmployeesToDB(data.employees);
+                alert(`Se crearon ${data.employees.length} legajos de empleados.`);
+                window.location.reload();
+            }
             return;
         }
 
@@ -516,6 +526,13 @@ const App: React.FC = () => {
                         <span className={`${sidebarExpanded ? 'opacity-100' : 'opacity-0 translate-x-4'} transition-all duration-300 whitespace-nowrap`}>Obras Sociales</span>
                     </button>
 
+                    <div className="h-4"></div>
+                    <p className={`text-[10px] font-black text-slate-500 uppercase tracking-widest px-4 mb-2 truncate transition-opacity duration-300 ${sidebarExpanded ? 'opacity-100' : 'opacity-0'}`}>Herramientas</p>
+                    <button onClick={() => setActiveTab('import')} className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 ${activeTab === 'import' ? 'bg-indigo-600 text-white shadow-lg font-black' : 'text-slate-400 hover:text-white hover:bg-slate-800 font-medium'}`}>
+                        <Upload className="w-5 h-5 shrink-0" />
+                        <span className={`${sidebarExpanded ? 'opacity-100' : 'opacity-0 translate-x-4'} transition-all duration-300 whitespace-nowrap`}>Importador PDF</span>
+                    </button>
+
                 </div>
 
                 <div className="p-4 border-t border-slate-800 bg-slate-900/50">
@@ -686,16 +703,24 @@ const App: React.FC = () => {
                                     onSelectBranch={setSelectedBranch}
                                 />
                             )}
+                            {activeTab === 'import' && (
+                                <ManualImport onImported={handleZettiImport} />
+                            )}
                         </div>
                     )}
                 </div>
 
                 {showReport && (
                     <PrintReport
-                        salesData={enrichedSalesData || []}
+                        data={enrichedSalesData || []}
                         startDate={startDate}
                         endDate={endDate}
                         onClose={() => setShowReport(false)}
+                        user={user.email || 'Admin'}
+                        branchFilter={selectedBranch}
+                        excludedCount={excludedProducts.length}
+                        includedCount={includedProducts.length}
+                        excludedEntitiesCount={excludedEntities.length}
                     />
                 )}
             </main>

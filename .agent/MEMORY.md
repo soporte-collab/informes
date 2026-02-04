@@ -148,5 +148,24 @@ Estas reglas son de cumplimiento OBLIGATORIO para evitar discrepancias:
 7.  **REGLA 6 – PROHIBICIONES**: Nunca sumar items + pagos. Nunca validar contra un valor que no se muestra.
 8.  **REGLA FINAL**: Lo que se ve = lo que se suma = lo que se valida.
 
+### 9. RRHH Avanzado y Auditoría de Personal (04 de Feb, 2026)
+- **AttendanceCalendar**: Se integró un calendario interactivo por empleado que cruza:
+    - **Fichadas Reales** (Reloj de control).
+    - **Ventas Zetti**: Detecta anomalías (vendedor vendió sin fichar o viceversa) con alertas visuales.
+    - **Cómputo de Horas**: Cálculo automático de horas trabajadas y **Horas Extras** (umbral de 45hs semanales).
+- **Importación Inteligente**: El motor de carga de XLS ahora es "omnipresente": escanea cada celda para vincular nombres, alias de Zetti o CUILs, permitiendo procesar archivos complejos de diferentes sucursales simultáneamente.
+- **Gestión de Ausentismo**: Se añadieron formularios para cargar Licencias (Vacaciones, Médicas) y Permisos especiales por horas.
+
+### 10. Finanzas: Lógica de Notas de Crédito (NC)
+- **Problema**: El sistema trataba las NC como deuda (Debe), inflando el saldo negativo.
+- **Corrección**: Se ajustó `dataHelpers.ts` y el importador de JSON. Cualquier comprobante identificado como "NC", "CRÉDITO" o "ANULACIÓN" se asigna automáticamente al **Haber**, restando de la deuda total.
+
+### 11. Herramientas de Automatización (Python)
+- **`extract_employees.py`**: Script para raspar nombres y CUILs de archivos XLS binarios antiguos para crear legajos automáticamente. Resuelve el caso de formatos mezclados (ej. "Enrique Ferrer" sin coma).
+- **`process_cc_pdfs.py`**: Procesador robusto basado en **PyMuPDF** para leer reportes "Detallados" de Zetti. Maneja bloques multilínea para vincular identidad del cliente con sus movimientos financieros.
+
+### 12. Optimización de Reportes (Impresión)
+- **Fix "Página en Blanco"**: Se detectó que las animaciones de Tailwind (`animate-in`, `fade-in`) bloqueaban la captura del PDF en el navegador. Se crearon reglas `@media print` para forzar opacidad 100% y eliminar transiciones, garantizando reportes de Deuda claros y en formato A4.
+
 ---
-*Última actualización: 03 de Febrero, 2026 - 23:45hs*
+*Última actualización: 04 de Febrero, 2026 - 12:35hs*

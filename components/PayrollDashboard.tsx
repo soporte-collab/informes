@@ -7,14 +7,19 @@ import {
     Calendar, Building2, Briefcase, FileText, ChevronRight,
     Save, X, CreditCard, TrendingUp, AlertCircle, Clock
 } from 'lucide-react';
-import { format, isWithinInterval } from 'date-fns';
+import { format, isWithinInterval, addDays, differenceInDays } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { fuzzyMatch, parseExcelTime } from '../utils/hrUtils';
+import { getAllHolidaysFromDB, saveHolidaysToDB, getAllLicensesFromDB, saveLicensesToDB, getAllSpecialPermitsFromDB, saveSpecialPermitsToDB, getAllSalesFromDB } from '../utils/db';
+import { AttendanceCalendar } from './AttendanceCalendar';
+import { TimeAttendanceRecord, EmployeeLicense, SpecialPermit, HolidayRecord, SaleRecord } from '../types';
 
 interface Props {
     startDate: string;
     endDate: string;
     selectedBranch: string;
     onPayrollUpdate?: () => void;
+    salesData?: SaleRecord[];
 }
 
 export const PayrollDashboard: React.FC<Props> = ({
@@ -43,26 +48,45 @@ export const PayrollDashboard: React.FC<Props> = ({
         periodEnd: format(new Date(), 'yyyy-MM-dd'),
     });
 
+    const [licenses, setLicenses] = useState<EmployeeLicense[]>([]);
+    const [holidays, setHolidays] = useState<HolidayRecord[]>([]);
+    const [permits, setPermits] = useState<SpecialPermit[]>([]);
+    const [selectedEmployeeDetail, setSelectedEmployeeDetail] = useState<Employee | null>(null);
+    const [fetchedSales, setFetchedSales] = useState<SaleRecord[]>([]);
+
     useEffect(() => {
         loadData();
     }, []);
 
     const loadData = async () => {
         setIsLoading(true);
-        const [empData, payData, attData] = await Promise.all([
+        const [empData, payData, attData, licData, holData, perData, salesDataRaw] = await Promise.all([
             getAllEmployeesFromDB(),
             getAllPayrollFromDB(),
-            getAllAttendanceFromDB()
+            getAllAttendanceFromDB(),
+            getAllLicensesFromDB(),
+            getAllHolidaysFromDB(),
+            getAllSpecialPermitsFromDB(),
+            getAllSalesFromDB()
         ]);
         setEmployees(empData);
         setPayroll(payData);
         setAttendance(attData);
+        setLicenses(licData);
+        setHolidays(holData);
+        setPermits(perData);
+        setFetchedSales(salesDataRaw);
         setIsLoading(false);
     };
 
     const handleAttendanceImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
         if (!files || files.length === 0) return;
+
+        if (employees.length === 0) {
+            alert("⚠️ No hay empleados registrados en 'Legajos'. Primero debes crear los empleados para poder vincular sus horarios.");
+            return;
+        }
 
         const XLSX = await import('xlsx');
         setIsLoading(true);
@@ -78,40 +102,54 @@ export const PayrollDashboard: React.FC<Props> = ({
                     const wb = XLSX.read(bstr, { type: 'binary' });
                     const wsname = wb.SheetNames[0];
                     const ws = wb.Sheets[wsname];
-                    const data = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+                    const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
 
-                    // Intentar deducir el nombre del empleado del nombre del archivo (ej: "ALEXIS ENERO.xls")
-                    const empName = file.name.split(' ')[0].toUpperCase();
-                    const employee = employees.find(e => e.name.toUpperCase().includes(empName));
+                    // Smart detection: Multiple employees in one file
+                    let currentEmployee: Employee | null = null;
 
-                    // Mapeo rústico basado en lo visto en Get-Content
-                    // Buscamos la fila donde empieza la data (después de "Fecha", "Entrada 1", etc.)
-                    let startRow = -1;
-                    for (let r = 0; r < data.length; r++) {
-                        if (data[r].some(cell => String(cell).includes('Fecha'))) {
-                            startRow = r + 1;
-                            break;
+                    for (let r = 0; r < rows.length; r++) {
+                        const row = rows[r];
+                        if (!row || row.length === 0) continue;
+                        const lineStr = row.map(c => String(c)).join(' ').toUpperCase();
+
+                        // 1. Detection of Employee Header (Name or CUIL)
+                        const cuilMatch = lineStr.match(/\d{1,2}-\d{8}-\d{1}/);
+                        if (cuilMatch) {
+                            const cuilStr = cuilMatch[0].replace(/[^0-9]/g, '');
+                            currentEmployee = employees.find(e => e.cuil.replace(/[^0-9]/g, '').includes(cuilStr)) || null;
                         }
-                    }
 
-                    if (startRow !== -1) {
-                        for (let r = startRow; r < data.length; r++) {
-                            const row = data[r];
-                            if (!row[0]) continue; // Fecha vacía
+                        // Fallback: If no current employee or New CUIL detected, try to find employee name/alias in ANY cell
+                        const potentialEmp = employees.find(emp =>
+                            row.some(cell => {
+                                const cStr = String(cell).toUpperCase();
+                                return (emp.name.toUpperCase().includes(cStr) && cStr.length > 5) ||
+                                    (cStr.includes(emp.name.toUpperCase()) && emp.name.length > 5) ||
+                                    (emp.zettiSellerName && cStr === emp.zettiSellerName.toUpperCase());
+                            })
+                        );
+                        if (potentialEmp) currentEmployee = potentialEmp;
 
-                            const dateStr = String(row[0]);
-                            // Normalizar fecha dd/mm/yyyy
-                            const attendanceRecord = {
-                                id: `${employee?.id || empName}-${dateStr}`,
-                                employeeId: employee?.id || 'manual',
-                                employeeName: employee?.name || empName,
+                        // 2. Detection of Data Row (Check if ANY cell in the row looks like a date)
+                        // We search for a cell that matches the date pattern, not just the first one
+                        const dateCellIdx = row.findIndex(c => String(c).match(/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/));
+
+                        if (dateCellIdx !== -1 && currentEmployee) {
+                            const dateStr = String(row[dateCellIdx]);
+
+                            const attendanceRecord: TimeAttendanceRecord = {
+                                id: `${currentEmployee.id}-${dateStr}`,
+                                employeeId: currentEmployee.id,
+                                employeeName: currentEmployee.name,
                                 date: dateStr,
-                                entrance1: row[1] || null,
-                                exit1: row[2] || null,
-                                entrance2: row[3] || null,
-                                exit2: row[4] || null,
-                                totalMinutes: 0, // Cálculo aproximado si es necesario
-                                status: row[1] ? 'present' : 'absent',
+                                // We take the 4 cells following the date cell as the 4 clock-ins
+                                entrance1: parseExcelTime(row[dateCellIdx + 1]),
+                                exit1: parseExcelTime(row[dateCellIdx + 2]),
+                                entrance2: parseExcelTime(row[dateCellIdx + 3]),
+                                exit2: parseExcelTime(row[dateCellIdx + 4]),
+                                totalMinutes: 0,
+                                overtimeMinutes: 0,
+                                status: row[dateCellIdx + 1] ? 'present' : 'absent',
                             };
                             allNewRecords.push(attendanceRecord);
                         }
@@ -429,6 +467,13 @@ export const PayrollDashboard: React.FC<Props> = ({
                                             <span className="text-teal-600">{emp.zettiSellerName || 'SIN VINCULAR'}</span>
                                         </div>
                                     </div>
+
+                                    <button
+                                        onClick={() => setSelectedEmployeeDetail(emp)}
+                                        className="w-full mt-6 py-3 bg-slate-50 text-slate-900 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-teal-600 hover:text-white transition-all border border-slate-100"
+                                    >
+                                        VER FICHA Y CALENDARIO
+                                    </button>
                                 </div>
                             ))}
                         </div>
@@ -668,6 +713,61 @@ export const PayrollDashboard: React.FC<Props> = ({
                     </div>
                 )
             }
+
+            {selectedEmployeeDetail && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md overflow-hidden animate-in fade-in duration-300">
+                    <div className="w-full max-w-5xl max-h-[90vh] overflow-y-auto no-scrollbar relative">
+                        <AttendanceCalendar
+                            employeeId={selectedEmployeeDetail.id}
+                            employeeName={selectedEmployeeDetail.name}
+                            attendance={attendance.filter(a => a.employeeId === selectedEmployeeDetail.id)}
+                            licenses={licenses.filter(l => l.employeeId === selectedEmployeeDetail.id)}
+                            holidays={holidays}
+                            permits={permits.filter(p => p.employeeId === selectedEmployeeDetail.id)}
+                            sales={fetchedSales.filter(s => fuzzyMatch(s.sellerName, selectedEmployeeDetail.zettiSellerName || ''))}
+                            onAddLicense={async (date) => {
+                                const type = window.prompt("Tipo de licencia (vacation, medical, permit):") as any;
+                                if (!type) return;
+                                const newLic: EmployeeLicense = {
+                                    id: Date.now().toString(),
+                                    employeeId: selectedEmployeeDetail.id,
+                                    type,
+                                    startDate: format(date, 'yyyy-MM-dd'),
+                                    endDate: format(date, 'yyyy-MM-dd'),
+                                    days: 1,
+                                    status: 'approved'
+                                };
+                                const updated = [...licenses, newLic];
+                                setLicenses(updated);
+                                await saveLicensesToDB(updated);
+                            }}
+                            onAddPermit={async (date) => {
+                                const reason = window.prompt("Motivo del permiso (ej: Trámite):");
+                                if (!reason) return;
+                                const fromTime = window.prompt("Desde (HH:mm):") || '00:00';
+                                const toTime = window.prompt("Hasta (HH:mm):") || '00:00';
+                                const newPermit: SpecialPermit = {
+                                    id: Date.now().toString(),
+                                    employeeId: selectedEmployeeDetail.id,
+                                    date: format(date, 'yyyy-MM-dd'),
+                                    fromTime,
+                                    toTime,
+                                    reason
+                                };
+                                const updated = [...permits, newPermit];
+                                setPermits(updated);
+                                await saveSpecialPermitsToDB(updated);
+                            }}
+                        />
+                        <button
+                            onClick={() => setSelectedEmployeeDetail(null)}
+                            className="absolute top-4 right-4 p-3 bg-white/10 hover:bg-rose-500 text-white rounded-full transition-all backdrop-blur-xl"
+                        >
+                            <X className="w-6 h-6" />
+                        </button>
+                    </div>
+                </div>
+            )}
         </div >
     );
 };

@@ -300,19 +300,38 @@ export interface TimeAttendanceRecord {
   entrance2?: string;
   exit2?: string;
   totalMinutes: number;
-  status: 'present' | 'absent' | 'late' | 'justified' | 'vacation' | 'medical';
+  overtimeMinutes: number;
+  status: 'present' | 'absent' | 'late' | 'justified' | 'vacation' | 'medical' | 'holiday';
   isAnomaly?: boolean;
+  markedWorkButNoSales?: boolean;
+  salesWorkButNoClockIn?: boolean;
   notes?: string;
 }
 
 export interface EmployeeLicense {
   id: string;
   employeeId: string;
-  type: 'vacation' | 'medical' | 'suspension' | 'other';
+  type: 'vacation' | 'medical' | 'suspension' | 'permit' | 'other';
   startDate: string;
   endDate: string;
+  days: number;
   status: 'pending' | 'approved' | 'rejected';
   notes?: string;
+}
+
+export interface SpecialPermit {
+  id: string;
+  employeeId: string;
+  date: string;
+  fromTime: string;
+  toTime: string;
+  reason: string;
+}
+
+export interface HolidayRecord {
+  id: string;
+  date: string;
+  name: string;
 }
 
 export interface PayrollConcept {

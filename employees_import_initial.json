@@ -1,0 +1,156 @@
+[
+  {
+    "id": "27-23849569-0",
+    "name": "ALONSO, SILVIA",
+    "cuil": "27-23849569-0",
+    "branch": "FCIA BIOSALUD",
+    "position": "Vendedor",
+    "status": "active",
+    "startDate": "2025-01-01",
+    "baseSalary": 0,
+    "zettiSellerName": "SILVIA"
+  },
+  {
+    "id": "27-35415968-1",
+    "name": "BRAHIM, SHEILA",
+    "cuil": "27-35415968-1",
+    "branch": "FCIA BIOSALUD",
+    "position": "Vendedor",
+    "status": "active",
+    "startDate": "2025-01-01",
+    "baseSalary": 0,
+    "zettiSellerName": "SHEILA"
+  },
+  {
+    "id": "27-24634830-3",
+    "name": "CORIA, BETIANA",
+    "cuil": "27-24634830-3",
+    "branch": "FCIA BIOSALUD",
+    "position": "Vendedor",
+    "status": "active",
+    "startDate": "2025-01-01",
+    "baseSalary": 0,
+    "zettiSellerName": "BETIANA"
+  },
+  {
+    "id": "27-37002894-5",
+    "name": "DIAMELA, OJEDA",
+    "cuil": "27-37002894-5",
+    "branch": "FCIA BIOSALUD",
+    "position": "Vendedor",
+    "status": "active",
+    "startDate": "2025-01-01",
+    "baseSalary": 0,
+    "zettiSellerName": "OJEDA"
+  },
+  {
+    "id": "24-21516768-8",
+    "name": "DIBLASSI, FLAVIA",
+    "cuil": "24-21516768-8",
+    "branch": "FCIA BIOSALUD",
+    "position": "Vendedor",
+    "status": "active",
+    "startDate": "2025-01-01",
+    "baseSalary": 0,
+    "zettiSellerName": "FLAVIA"
+  },
+  {
+    "id": "GEN-ENRIQUEFERRER",
+    "name": "ENRIQUE FERRER",
+    "cuil": "00-00000000-0",
+    "branch": "CHACRAS PARK",
+    "position": "Vendedor",
+    "status": "active",
+    "startDate": "2025-01-01",
+    "baseSalary": 0,
+    "zettiSellerName": "ENRIQUE"
+  },
+  {
+    "id": "20-38463055-4",
+    "name": "GARAY, IVAN",
+    "cuil": "20-38463055-4",
+    "branch": "FCIA BIOSALUD",
+    "position": "Vendedor",
+    "status": "active",
+    "startDate": "2025-01-01",
+    "baseSalary": 0,
+    "zettiSellerName": "IVAN"
+  },
+  {
+    "id": "GEN-GUAGNINI,CARLA",
+    "name": "GUAGNINI, CARLA",
+    "cuil": "00-00000000-0",
+    "branch": "CHACRAS PARK",
+    "position": "Vendedor",
+    "status": "active",
+    "startDate": "2025-01-01",
+    "baseSalary": 0,
+    "zettiSellerName": "CARLA"
+  },
+  {
+    "id": "27-42403215-3",
+    "name": "GUERRERO, FLOR",
+    "cuil": "27-42403215-3",
+    "branch": "FCIA BIOSALUD",
+    "position": "Vendedor",
+    "status": "active",
+    "startDate": "2025-01-01",
+    "baseSalary": 0,
+    "zettiSellerName": "FLOR"
+  },
+  {
+    "id": "GEN-GUERRERO,FLORENCIA",
+    "name": "GUERRERO,FLORENCIA",
+    "cuil": "00-00000000-0",
+    "branch": "CHACRAS PARK",
+    "position": "Vendedor",
+    "status": "active",
+    "startDate": "2025-01-01",
+    "baseSalary": 0,
+    "zettiSellerName": "FLORENCIA"
+  },
+  {
+    "id": "20-40069382-0",
+    "name": "ILLANES, ALEXIS",
+    "cuil": "20-40069382-0",
+    "branch": "FCIA BIOSALUD",
+    "position": "Vendedor",
+    "status": "active",
+    "startDate": "2025-01-01",
+    "baseSalary": 0,
+    "zettiSellerName": "ALEXIS"
+  },
+  {
+    "id": "GEN-ILLANES,ALEXYS",
+    "name": "ILLANES, ALEXYS",
+    "cuil": "00-00000000-0",
+    "branch": "CHACRAS PARK",
+    "position": "Vendedor",
+    "status": "active",
+    "startDate": "2025-01-01",
+    "baseSalary": 0,
+    "zettiSellerName": "ALEXYS"
+  },
+  {
+    "id": "20-42168697-2",
+    "name": "OROPEL, FEDERICO",
+    "cuil": "20-42168697-2",
+    "branch": "FCIA BIOSALUD",
+    "position": "Vendedor",
+    "status": "active",
+    "startDate": "2025-01-01",
+    "baseSalary": 0,
+    "zettiSellerName": "FEDERICO"
+  },
+  {
+    "id": "GEN-RABINO,SOL",
+    "name": "RABINO, SOL",
+    "cuil": "00-00000000-0",
+    "branch": "CHACRAS PARK",
+    "position": "Vendedor",
+    "status": "active",
+    "startDate": "2025-01-01",
+    "baseSalary": 0,
+    "zettiSellerName": "SOL"
+  }
+]

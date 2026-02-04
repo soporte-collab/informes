@@ -376,30 +376,37 @@ export const processCurrentAccountData = (data: any[]): CurrentAccountRecord[] =
     // INGRESADO = Debt (Debe)
     // COBRADO = Payment (Haber)
     const status = (getValue(row, "Estado") || "").toUpperCase();
+    const codification = getValue(row, "Codificacion", "Comprobante", "Referencia");
+    const description = getValue(row, "TipoOperacion", "Concepto") || "-";
+
+    const isNC = codification.toUpperCase().includes("NC") ||
+      description.toUpperCase().includes("NC") ||
+      description.toUpperCase().includes("CREDITO") ||
+      description.toUpperCase().includes("ANULACION");
 
     let debit = 0;
     let credit = 0;
 
-    if (status.includes("INGR")) {
+    if (isNC) {
+      // NC always reduces debt (Credit)
+      credit = Math.abs(amount);
+    } else if (status.includes("INGR")) {
       debit = amount;
     } else if (status.includes("COBR")) {
       credit = amount;
     } else {
-      // Default fallback
       debit = amount;
     }
-
-    const codification = getValue(row, "Codificacion", "Comprobante", "Referencia");
 
     processed.push({
       id: `CA-${index}-${date.getTime()}`,
       date: date,
       entity: currentEntity,
-      type: status || (debit > 0 ? "INGRESADO" : "COBRADO"),
+      type: isNC ? "NC" : (status || (debit > 0 ? "INGRESADO" : "COBRADO")),
       debit: debit,
       credit: credit,
-      balance: 0, // Will be calculated relatively in the dashboard or total
-      description: getValue(row, "TipoOperacion", "Concepto") || "-",
+      balance: 0,
+      description: description,
       reference: codification || `REF-${index}`,
       branch: getValue(row, "Nodo") || "General"
     });

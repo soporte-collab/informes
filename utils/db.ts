@@ -1,6 +1,6 @@
 import { db, auth, storage } from '../src/firebaseConfig';
 import { ref, uploadString, getDownloadURL, deleteObject } from 'firebase/storage';
-import { SaleRecord, InvoiceRecord, ExpenseRecord, CurrentAccountRecord, InsuranceRecord, StockRecord, UnifiedTransaction, Employee, PayrollRecord } from '../types';
+import { SaleRecord, InvoiceRecord, ExpenseRecord, CurrentAccountRecord, InsuranceRecord, StockRecord, UnifiedTransaction, Employee, PayrollRecord, EmployeeLicense, HolidayRecord, SpecialPermit } from '../types';
 
 const SHARED_PATH_PREFIX = 'reports_data';
 
@@ -290,15 +290,6 @@ export const saveAttendanceToDB = async (records: any[]): Promise<void> => {
   await saveJsonToStorage(records, 'attendance.json');
 };
 
-export const getAllLicensesFromDB = async (): Promise<any[]> => {
-  const data = await loadJsonFromStorage('licenses.json');
-  return Array.isArray(data) ? data : [];
-};
-
-export const saveLicensesToDB = async (licenses: any[]): Promise<void> => {
-  await saveJsonToStorage(licenses, 'licenses.json');
-};
-
 export const savePayrollToDB = async (payroll: PayrollRecord[]): Promise<void> => {
   await saveJsonToStorage(payroll, 'payroll.json');
 };
@@ -306,6 +297,33 @@ export const savePayrollToDB = async (payroll: PayrollRecord[]): Promise<void> =
 export const getAllPayrollFromDB = async (): Promise<PayrollRecord[]> => {
   const rawData = await loadJsonFromStorage('payroll.json');
   return Array.isArray(rawData) ? rawData : [];
+};
+
+export const saveLicensesToDB = async (licenses: EmployeeLicense[]): Promise<void> => {
+  await saveJsonToStorage(licenses, 'licenses.json');
+};
+
+export const getAllLicensesFromDB = async (): Promise<EmployeeLicense[]> => {
+  const data = await loadJsonFromStorage('licenses.json');
+  return Array.isArray(data) ? data : [];
+};
+
+export const saveHolidaysToDB = async (holidays: HolidayRecord[]): Promise<void> => {
+  await saveJsonToStorage(holidays, 'holidays.json');
+};
+
+export const getAllHolidaysFromDB = async (): Promise<HolidayRecord[]> => {
+  const data = await loadJsonFromStorage('holidays.json');
+  return Array.isArray(data) ? data : [];
+};
+
+export const saveSpecialPermitsToDB = async (permits: SpecialPermit[]): Promise<void> => {
+  await saveJsonToStorage(permits, 'special_permits.json');
+};
+
+export const getAllSpecialPermitsFromDB = async (): Promise<SpecialPermit[]> => {
+  const data = await loadJsonFromStorage('special_permits.json');
+  return Array.isArray(data) ? data : [];
 };
 
 // --- GENERAL UTILS ---

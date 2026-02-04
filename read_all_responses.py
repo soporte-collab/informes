@@ -3,6 +3,10 @@ import os
 import json
 
 def read_all_docx(directory):
+    if not os.path.exists(directory):
+        print(f"Directory not found: {directory}")
+        return
+        
     files = [f for f in os.listdir(directory) if f.endswith('.docx') and not f.startswith('~$')]
     results = {}
     
@@ -23,5 +27,5 @@ def read_all_docx(directory):
         print("\n" + "="*50 + "\n")
 
 if __name__ == "__main__":
-    directory = r"e:\programacion\informes\ARCHIVOS\respuesta"
+    directory = r"c:\programacion\informes\ARCHIVOS\respuesta"
     read_all_docx(directory)
