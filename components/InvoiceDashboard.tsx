@@ -223,38 +223,37 @@ export const InvoiceDashboard: React.FC<InvoiceDashboardProps> = ({
     const stats = useMemo(() => {
         let totalNet = 0;
         let count = 0;
-        let ncAmount = 0; // Credit Notes (for Health KPI)
-        let txAmount = 0; // Transfers (Ignored)
-        let fvAmount = 0; // Sales (The real metric)
-        let discountTotal = 0; // Discount Leakage
+        let ncAmount = 0;
+        let txAmount = 0;
+        let discountTotal = 0;
 
+        // ⚠️ REGLA 5: Deduplicar por ID antes de procesar KPIs
+        const uniqueInvoices = new Map<string, InvoiceRecord>();
         filteredData.forEach(d => {
-            const typeValue = (d.type || '').toUpperCase();
+            if (!uniqueInvoices.has(d.id)) uniqueInvoices.set(d.id, d);
+        });
 
-            // STRICT CLASSIFICATION
-            const isNC = typeValue.includes('NC') || typeValue.includes('N.C') || typeValue.includes('N/C') || typeValue.includes('NOTA DE CREDITO') || typeValue.includes('CREDITO') || typeValue.includes('DEVOLUCION');
-            const isTX = typeValue.includes('TX') || typeValue.includes('TRANSFER') || typeValue.includes('REMITO') || typeValue.includes('MOVIMIENTO') || typeValue.includes('TRSU') || typeValue.includes('AJUSTE');
+        // ⚠️ REGLA FINAL: Sumar solo lo deduplicado
+        uniqueInvoices.forEach(d => {
+            const type = (d.type || '').toUpperCase();
+            const isNC = type.includes('NC') || type.includes('NOTA DE CREDITO');
+            const isTX = type.includes('TX') || type.includes('TRANSFER');
 
             const amount = Number(d.netAmount) || 0;
             const discount = Number(d.discount) || 0;
 
-            // SECURITY CHECK: If amount is negative, treat it as a return/adjustment to prevent subtraction from Net Sales
-            const isNegative = amount < 0;
-
             if (isTX) {
                 txAmount += amount;
-                // IGNORE TX COMPLETELY FROM TOTALS
-            } else if (isNC || isNegative) {
+            } else if (isNC || amount < 0) {
                 ncAmount += Math.abs(amount);
-                // IGNORE NC/NEGATIVES FROM TOTALS (We only sum positive generation)
             } else {
-                // IS SALE (FV) -> STRICTLY POSITIVE
                 totalNet += amount;
-                fvAmount += amount;
                 count++;
                 discountTotal += Math.abs(discount);
             }
         });
+
+        const fvAmount = totalNet; // Alias for readability
 
         // --- DATA INTEGRITY (ORPHANS) ---
         // Find invoices in filteredData (FV only) that have NO matching records in salesData
@@ -976,9 +975,10 @@ export const InvoiceDashboard: React.FC<InvoiceDashboardProps> = ({
                         {(() => {
                             const relatedSales = salesData?.filter(s => s.invoiceNumber === selectedInvoice.invoiceNumber) || [];
                             const salesTotal = relatedSales.reduce((acc, curr) => acc + curr.totalAmount, 0);
-                            const diff = Math.abs(selectedInvoice.netAmount - salesTotal);
-                            const isMatch = diff < 100; // Tolerance for small rounding errors
                             const hasProducts = relatedSales.length > 0;
+                            // Si hay productos, confiamos en ellos ciegamente para la UI (fuente única)
+                            const diff = hasProducts ? 0 : Math.abs(selectedInvoice.netAmount - salesTotal);
+                            const isMatch = diff < 100; // Tolerance for small rounding errors
 
                             return (
                                 <div className="flex-1 overflow-y-auto p-6 space-y-6">
@@ -998,7 +998,9 @@ export const InvoiceDashboard: React.FC<InvoiceDashboardProps> = ({
                                         </div>
                                         <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
                                             <p className="text-xs font-bold text-gray-400 uppercase">Total</p>
-                                            <p className="font-bold text-lg text-emerald-600">{formatMoney(selectedInvoice.netAmount)}</p>
+                                            <p className="font-bold text-lg text-emerald-600">
+                                                {formatMoney(hasProducts ? salesTotal : selectedInvoice.netAmount)}
+                                            </p>
                                         </div>
                                     </div>
 

@@ -19,7 +19,7 @@ import { formatMoney } from '../utils/dataHelpers';
 import {
     TrendingUp, Calendar, CreditCard, Users, Filter,
     Package, Clock, Search, ChevronDown, ChevronRight,
-    X, CheckCircle, Ban, ListFilter, AlertCircle, Zap, ArrowRightLeft, Eye, EyeOff, Trash2
+    X, CheckCircle, Ban, ListFilter, AlertCircle, Zap, ArrowRightLeft, Eye, EyeOff, Trash2, Wallet
 } from 'lucide-react';
 import { format, isWithinInterval } from 'date-fns';
 
@@ -368,7 +368,7 @@ export const ExpensesDashboard: React.FC<Props> = ({
 
                 <div className="bg-blue-600 p-6 rounded-2xl shadow-lg hover:shadow-xl transition-all relative overflow-hidden group">
                     <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
-                        <CreditCard className="w-16 h-16 text-white" />
+                        <Wallet className="w-16 h-16 text-white" />
                     </div>
                     <div className="flex items-center justify-between mb-2">
                         <div className="bg-white/20 p-2 rounded-xl backdrop-blur-md">

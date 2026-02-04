@@ -1,0 +1,1098 @@
+{
+  "date": "2026-02-04T01:29:19.319Z",
+  "stats": {
+    "invoices": 182,
+    "sales": 397,
+    "expenses": 43,
+    "insurance": 47
+  },
+  "rawSalesSample": [
+    {
+      "authorizationDate": null,
+      "vatPeriod": {
+        "description": "2/2026",
+        "id": "1349400116"
+      },
+      "phone": null,
+      "operations": [],
+      "creationUser": {
+        "id": "1349400030",
+        "alias": "DIAME",
+        "description": "OJEDA DIAMELA MARIA"
+      },
+      "modificationDate": "2026-02-02T09:38:07.650-0300",
+      "id": "134940000000272688",
+      "subValueType": {
+        "id": "337",
+        "description": "FACTURA DE VENTA"
+      },
+      "receipt": null,
+      "codification": "0001-00072564",
+      "emissionCenter": {
+        "status": null,
+        "updateDate": null,
+        "shortName": "CE ELE BIO 01",
+        "code": "1",
+        "externalCode": null,
+        "name": "CE ELE BIO 01",
+        "id": "134940000000000010",
+        "type": "CENTROS DE EMISION"
+      },
+      "modificationUser": {
+        "alias": "SIL",
+        "id": "1349400001",
+        "description": "SILVIA ALONSO"
+      },
+      "observations": "",
+      "creationNode": {
+        "status": null,
+        "shortName": "FCIA BIOSALUD",
+        "updateDate": null,
+        "id": "2378041",
+        "code": "000.004.015.001.001",
+        "type": null,
+        "name": "FCIA BIOSALUD",
+        "hierarchicalCode": "000.004.015.001.001",
+        "externalCode": null
+      },
+      "agreements": [
+        {
+          "modificationDate": "2026-02-02T09:38:07.666-0300",
+          "valueType": {
+            "abbreviation": null,
+            "description": "BILLETE",
+            "id": "3",
+            "shortName": "BILLETE",
+            "name": "BILLE"
+          },
+          "order": "2",
+          "authorizationNumber": null,
+          "modificationNode": {
+            "type": null,
+            "updateDate": null,
+            "id": "2378041",
+            "name": "FCIA BIOSALUD",
+            "shortName": "FCIA BIOSALUD",
+            "code": "000.004.015.001.001",
+            "externalCode": null,
+            "status": null,
+            "hierarchicalCode": "000.004.015.001.001"
+          },
+          "authorizationType": null,
+          "operations": null,
+          "expirationDate": "2026-03-04T09:37:11.642-0300",
+          "status": {
+            "name": "ENTR",
+            "color": "NEUTRAL",
+            "description": "ENTREGADO",
+            "id": "43"
+          },
+          "receipt": 134940000000272690,
+          "vatPeriod": null,
+          "creationDate": "2026-02-02T09:37:11.642-0300",
+          "id": "134940000000272689",
+          "type": "cash",
+          "externalCode": null,
+          "observations": null,
+          "emissionDate": "2026-02-02T09:37:11.642-0300",
+          "creationUser": {
+            "alias": "DIAME",
+            "description": "OJEDA DIAMELA MARIA",
+            "id": "1349400030"
+          },
+          "mainAmount": 0,
+          "concepts": null,
+          "effective": {
+            "name": "EFECTIVO",
+            "id": "141",
+            "status": "ACTIVO",
+            "externalCode": "CONSUMIDOR FINAL",
+            "code": "23",
+            "type": "EFECTIVO",
+            "updateDate": "2024-07-24T15:28:56.989-0300",
+            "shortName": "$$$"
+          },
+          "modificationUser": {
+            "description": "SILVIA ALONSO",
+            "alias": "SIL",
+            "id": "1349400001"
+          },
+          "authorizationExpirationDate": null,
+          "creationNode": {
+            "id": "2378041",
+            "type": null,
+            "status": null,
+            "code": "000.004.015.001.001",
+            "externalCode": null,
+            "hierarchicalCode": "000.004.015.001.001",
+            "name": "FCIA BIOSALUD",
+            "shortName": "FCIA BIOSALUD",
+            "updateDate": null
+          },
+          "metadata": null,
+          "generalDiscount": null,
+          "authorizationDate": null,
+          "subValueType": {
+            "description": "BILLETE",
+            "id": "11"
+          },
+          "actualizationDate": "2026-02-02T09:38:11.871-0300",
+          "codification": "Efectivo"
+        },
+        {
+          "modificationUser": {
+            "description": "SILVIA ALONSO",
+            "alias": "SIL",
+            "id": "1349400001"
+          },
+          "externalCode": null,
+          "operations": null,
+          "receipt": 134940000000272690,
+          "subValueType": {
+            "description": "CONVENIO",
+            "id": "364"
+          },
+          "creationUser": {
+            "id": "1349400030",
+            "alias": "DIAME",
+            "description": "OJEDA DIAMELA MARIA"
+          },
+          "status": {
+            "description": "INGRESADO",
+            "id": "4",
+            "color": "NEUTRAL",
+            "name": "INGR"
+          },
+          "emissionDate": "2026-02-02T09:37:11.642-0300",
+          "authorizationExpirationDate": null,
+          "codification": "FALTA DEFINIR TALONARIO",
+          "creationDate": "2026-02-02T09:37:11.642-0300",
+          "creationNode": {
+            "code": "000.004.015.001.001",
+            "status": null,
+            "shortName": "FCIA BIOSALUD",
+            "externalCode": null,
+            "updateDate": null,
+            "hierarchicalCode": "000.004.015.001.001",
+            "id": "2378041",
+            "type": null,
+            "name": "FCIA BIOSALUD"
+          },
+          "expirationDate": "2026-03-04T09:37:11.642-0300",
+          "authorizationType": null,
+          "actualizationDate": "2026-02-02T09:38:11.871-0300",
+          "entity": {
+            "type": "ENTIDADES AGRUPADORAS",
+            "code": "0000008",
+            "externalCode": "0000008",
+            "shortName": "CLI FIELES",
+            "updateDate": "2024-06-18T19:35:57.558-0300",
+            "status": "ACTIVO",
+            "name": "CLIENTES FIELES",
+            "id": "134940000000000051"
+          },
+          "type": "agreement",
+          "observations": null,
+          "vatPeriod": null,
+          "authorizationDate": null,
+          "id": "134940000000272690",
+          "authorizationNumber": null,
+          "modificationNode": {
+            "type": null,
+            "status": null,
+            "updateDate": null,
+            "hierarchicalCode": "000.004.015.001.001",
+            "externalCode": null,
+            "name": "FCIA BIOSALUD",
+            "code": "000.004.015.001.001",
+            "shortName": "FCIA BIOSALUD",
+            "id": "2378041"
+          },
+          "mainAmount": 0,
+          "modificationDate": "2026-02-02T09:38:07.675-0300",
+          "metadata": null,
+          "valueType": {
+            "description": "CONVENIO",
+            "abbreviation": "",
+            "id": "211",
+            "name": "CONV",
+            "shortName": "CONVENIO"
+          },
+          "order": "3",
+          "generalDiscount": null,
+          "concepts": null
+        },
+        {
+          "id": "134940000000272691",
+          "type": "cardInstallment",
+          "vatPeriod": null,
+          "expirationDate": "2026-03-04T09:37:11.642-0300",
+          "receipt": 134940000000272690,
+          "authorizationNumber": null,
+          "modificationNode": {
+            "id": "2378041",
+            "code": "000.004.015.001.001",
+            "hierarchicalCode": "000.004.015.001.001",
+            "status": null,
+            "type": null,
+            "updateDate": null,
+            "shortName": "FCIA BIOSALUD",
+            "name": "FCIA BIOSALUD",
+            "externalCode": null
+          },
+          "observations": null,
+          "metadata": null,
+          "modificationDate": "2026-02-02T09:38:07.685-0300",
+          "status": {
+            "id": "4",
+            "name": "INGR",
+            "description": "INGRESADO",
+            "color": "NEUTRAL"
+          },
+          "actualizationDate": "2026-02-02T09:38:11.871-0300",
+          "valueType": {
+            "description": "CUOTA DE TARJETA",
+            "id": "9",
+            "name": "TARJ",
+            "shortName": "CTA TARJ",
+            "abbreviation": ""
+          },
+          "creationUser": {
+            "alias": "DIAME",
+            "id": "1349400030",
+            "description": "OJEDA DIAMELA MARIA"
+          },
+          "generalDiscount": null,
+          "operations": null,
+          "modificationUser": {
+            "description": "SILVIA ALONSO",
+            "alias": "SIL",
+            "id": "1349400001"
+          },
+          "authorizationExpirationDate": null,
+          "codification": "-",
+          "externalCode": null,
+          "creationDate": "2026-02-02T09:37:11.642-0300",
+          "feesPaymentPlan": {
+            "externalCode": null,
+            "shortName": "1/1",
+            "updateDate": null,
+            "code": "1/1",
+            "type": "CUOTAS PLAN PAGO",
+            "status": null,
+            "id": "21641",
+            "name": "CUOTA 1/1"
+          },
+          "couponNumber": null,
+          "creationNode": {
+            "hierarchicalCode": "000.004.015.001.001",
+            "id": "2378041",
+            "shortName": "FCIA BIOSALUD",
+            "code": "000.004.015.001.001",
+            "updateDate": null,
+            "type": null,
+            "name": "FCIA BIOSALUD",
+            "status": null,
+            "externalCode": null
+          },
+          "mainAmount": 17550,
+          "subValueType": {
+            "id": "22",
+            "description": "CUOTA DE TARJETA"
+          },
+          "concepts": null,
+          "emissionDate": "2026-02-02T09:37:11.642-0300",
+          "authorizationDate": null,
+          "card": {
+            "externalCode": null,
+            "code": "A1234",
+            "type": "TARJETAS CREDITOS / DEBITOS",
+            "status": "ACTIVO",
+            "id": "134940000000000250",
+            "shortName": "MODO",
+            "updateDate": "2023-06-30T10:18:26.821-0300",
+            "name": "MODO"
+          },
+          "authorizationType": null,
+          "originReceipt": {
+            "valueType": {
+              "abbreviation": "FV",
+              "id": "197",
+              "name": "FDVP",
+              "shortName": "FA VENTA P",
+              "description": "FACTURA DE VENTA"
+            },
+            "id": "134940000000272688",
+            "codification": "0001-00072564"
+          },
+          "order": "4",
+          "cancellation": null
+        },
+        {
+          "actualizationDate": "2026-02-02T09:38:11.871-0300",
+          "subValueType": {
+            "id": "11",
+            "description": "BILLETE"
+          },
+          "valueType": {
+            "description": "BILLETE",
+            "id": "3",
+            "shortName": "BILLETE",
+            "abbreviation": null,
+            "name": "BILLE"
+          },
+          "metadata": null,
+          "authorizationExpirationDate": null,
+          "authorizationType": null,
+          "creationDate": "2026-02-02T09:37:11.642-0300",
+          "expirationDate": "2026-03-04T09:37:11.642-0300",
+          "operations": null,
+          "authorizationNumber": null,
+          "authorizationDate": null,
+          "observations": null,
+          "effective": {
+            "updateDate": "2024-07-24T15:28:56.989-0300",
+            "shortName": "$$$",
+            "code": "23",
+            "externalCode": "CONSUMIDOR FINAL",
+            "name": "EFECTIVO",
+            "id": "141",
+            "type": "EFECTIVO",
+            "status": "ACTIVO"
+          },
+          "generalDiscount": null,
+          "emissionDate": "2026-02-02T09:37:11.642-0300",
+          "modificationUser": {
+            "description": "SILVIA ALONSO",
+            "id": "1349400001",
+            "alias": "SIL"
+          },
+          "order": "2",
+          "modificationNode": {
+            "shortName": "FCIA BIOSALUD",
+            "status": null,
+            "code": "000.004.015.001.001",
+            "externalCode": null,
+            "updateDate": null,
+            "hierarchicalCode": "000.004.015.001.001",
+            "name": "FCIA BIOSALUD",
+            "id": "2378041",
+            "type": null
+          },
+          "concepts": null,
+          "codification": "Efectivo",
+          "type": "cash",
+          "status": {
+            "id": "43",
+            "color": "NEUTRAL",
+            "name": "ENTR",
+            "description": "ENTREGADO"
+          },
+          "creationUser": {
+            "alias": "DIAME",
+            "description": "OJEDA DIAMELA MARIA",
+            "id": "1349400030"
+          },
+          "mainAmount": 0,
+          "receipt": 134940000000272690,
+          "creationNode": {
+            "type": null,
+            "code": "000.004.015.001.001",
+            "hierarchicalCode": "000.004.015.001.001",
+            "name": "FCIA BIOSALUD",
+            "status": null,
+            "shortName": "FCIA BIOSALUD",
+            "externalCode": null,
+            "updateDate": null,
+            "id": "2378041"
+          },
+          "externalCode": null,
+          "modificationDate": "2026-02-02T09:38:07.666-0300",
+          "id": "134940000000272689",
+          "vatPeriod": null
+        },
+        {
+          "entity": {
+            "code": "0000008",
+            "updateDate": "2024-06-18T19:35:57.558-0300",
+            "id": "134940000000000051",
+            "type": "ENTIDADES AGRUPADORAS",
+            "name": "CLIENTES FIELES",
+            "externalCode": "0000008",
+            "shortName": "CLI FIELES",
+            "status": "ACTIVO"
+          },
+          "operations": null,
+          "externalCode": null,
+          "receipt": 134940000000272690,
+          "emissionDate": "2026-02-02T09:37:11.642-0300",
+          "mainAmount": 0,
+          "actualizationDate": "2026-02-02T09:38:11.871-0300",
+          "subValueType": {
+            "id": "364",
+            "description": "CONVENIO"
+          },
+          "type": "agreement",
+          "id": "134940000000272690",
+          "generalDiscount": null,
+          "modificationDate": "2026-02-02T09:38:07.675-0300",
+          "vatPeriod": null,
+          "expirationDate": "2026-03-04T09:37:11.642-0300",
+          "valueType": {
+            "name": "CONV",
+            "id": "211",
+            "shortName": "CONVENIO",
+            "description": "CONVENIO",
+            "abbreviation": ""
+          },
+          "creationUser": {
+            "alias": "DIAME",
+            "id": "1349400030",
+            "description": "OJEDA DIAMELA MARIA"
+          },
+          "modificationUser": {
+            "id": "1349400001",
+            "alias": "SIL",
+            "description": "SILVIA ALONSO"
+          },
+          "authorizationNumber": null,
+          "metadata": null,
+          "authorizationDate": null,
+          "authorizationExpirationDate": null,
+          "codification": "FALTA DEFINIR TALONARIO",
+          "status": {
+            "id": "4",
+            "description": "INGRESADO",
+            "name": "INGR",
+            "color": "NEUTRAL"
+          },
+          "creationNode": {
+            "name": "FCIA BIOSALUD",
+            "shortName": "FCIA BIOSALUD",
+            "hierarchicalCode": "000.004.015.001.001",
+            "code": "000.004.015.001.001",
+            "id": "2378041",
+            "status": null,
+            "updateDate": null,
+            "type": null,
+            "externalCode": null
+          },
+          "authorizationType": null,
+          "observations": null,
+          "concepts": null,
+          "order": "3",
+          "creationDate": "2026-02-02T09:37:11.642-0300",
+          "modificationNode": {
+            "updateDate": null,
+            "externalCode": null,
+            "shortName": "FCIA BIOSALUD",
+            "type": null,
+            "code": "000.004.015.001.001",
+            "name": "FCIA BIOSALUD",
+            "id": "2378041",
+            "status": null,
+            "hierarchicalCode": "000.004.015.001.001"
+          }
+        },
+        {
+          "feesPaymentPlan": {
+            "id": "21641",
+            "type": "CUOTAS PLAN PAGO",
+            "shortName": "1/1",
+            "externalCode": null,
+            "updateDate": null,
+            "status": null,
+            "name": "CUOTA 1/1",
+            "code": "1/1"
+          },
+          "mainAmount": 17550,
+          "concepts": null,
+          "creationNode": {
+            "updateDate": null,
+            "code": "000.004.015.001.001",
+            "externalCode": null,
+            "name": "FCIA BIOSALUD",
+            "status": null,
+            "type": null,
+            "hierarchicalCode": "000.004.015.001.001",
+            "shortName": "FCIA BIOSALUD",
+            "id": "2378041"
+          },
+          "operations": null,
+          "id": "134940000000272691",
+          "order": "4",
+          "modificationDate": "2026-02-02T09:38:07.685-0300",
+          "authorizationDate": null,
+          "cancellation": null,
+          "observations": null,
+          "metadata": null,
+          "externalCode": null,
+          "generalDiscount": null,
+          "emissionDate": "2026-02-02T09:37:11.642-0300",
+          "vatPeriod": null,
+          "card": {
+            "updateDate": "2023-06-30T10:18:26.821-0300",
+            "externalCode": null,
+            "id": "134940000000000250",
+            "name": "MODO",
+            "status": "ACTIVO",
+            "shortName": "MODO",
+            "code": "A1234",
+            "type": "TARJETAS CREDITOS / DEBITOS"
+          },
+          "modificationUser": {
+            "id": "1349400001",
+            "alias": "SIL",
+            "description": "SILVIA ALONSO"
+          },
+          "authorizationNumber": null,
+          "creationDate": "2026-02-02T09:37:11.642-0300",
+          "authorizationExpirationDate": null,
+          "authorizationType": null,
+          "expirationDate": "2026-03-04T09:37:11.642-0300",
+          "status": {
+            "name": "INGR",
+            "color": "NEUTRAL",
+            "description": "INGRESADO",
+            "id": "4"
+          },
+          "actualizationDate": "2026-02-02T09:38:11.871-0300",
+          "originReceipt": {
+            "id": "134940000000272688",
+            "valueType": {
+              "shortName": "FA VENTA P",
+              "description": "FACTURA DE VENTA",
+              "name": "FDVP",
+              "id": "197",
+              "abbreviation": "FV"
+            },
+            "codification": "0001-00072564"
+          },
+          "valueType": {
+            "id": "9",
+            "name": "TARJ",
+            "shortName": "CTA TARJ",
+            "abbreviation": "",
+            "description": "CUOTA DE TARJETA"
+          },
+          "subValueType": {
+            "description": "CUOTA DE TARJETA",
+            "id": "22"
+          },
+          "receipt": 134940000000272690,
+          "codification": "-",
+          "couponNumber": null,
+          "type": "cardInstallment",
+          "creationUser": {
+            "alias": "DIAME",
+            "id": "1349400030",
+            "description": "OJEDA DIAMELA MARIA"
+          },
+          "modificationNode": {
+            "updateDate": null,
+            "status": null,
+            "externalCode": null,
+            "shortName": "FCIA BIOSALUD",
+            "code": "000.004.015.001.001",
+            "name": "FCIA BIOSALUD",
+            "hierarchicalCode": "000.004.015.001.001",
+            "type": null,
+            "id": "2378041"
+          }
+        }
+      ],
+      "emissionDate": "2026-02-02T09:38:04.119-0300",
+      "modificationNode": {
+        "shortName": "FCIA BIOSALUD",
+        "type": null,
+        "externalCode": null,
+        "id": "2378041",
+        "updateDate": null,
+        "code": "000.004.015.001.001",
+        "status": null,
+        "hierarchicalCode": "000.004.015.001.001",
+        "name": "FCIA BIOSALUD"
+      },
+      "generalDiscount": null,
+      "concepts": null,
+      "authorizationType": {
+        "id": "3",
+        "description": "CAE"
+      },
+      "periodDateFrom": null,
+      "customer": {
+        "companyName": "",
+        "status": "ACTIVO",
+        "externalCode": "",
+        "cuit": "",
+        "type": "CLIENTES",
+        "documentNumber": "20424126",
+        "lastName": "GIMENEZ ",
+        "code": "20424126",
+        "name": "GIMENEZ , MARÍA GABRIELA",
+        "address": null,
+        "groupingEntity": null,
+        "documentType": "DNI",
+        "email": "",
+        "id": "134940000000000494",
+        "updateDate": "2025-11-11T18:38:26.827-0300",
+        "firstName": "GIMENEZ , MARÍA GABRIELA",
+        "vatSituation": {
+          "name": "CONS.FINAL",
+          "externalCode": "C",
+          "id": "3",
+          "description": "CONSUMIDOR FINAL"
+        },
+        "modificationDate": "2025-11-11T18:38:26.828-0300",
+        "shortName": "."
+      },
+      "actualizationDate": "2026-02-02T09:38:11.871-0300",
+      "_enriched": true,
+      "fiscalType": "E",
+      "order": "1",
+      "authorizationNumber": "86052214397096",
+      "expirationDate": "2026-03-04T09:37:11.642-0300",
+      "externalCode": null,
+      "status": {
+        "id": "4",
+        "name": "INGR",
+        "color": "NEUTRAL",
+        "description": "INGRESADO"
+      },
+      "letter": "B",
+      "creationDate": "2026-02-02T09:37:11.642-0300",
+      "address": null,
+      "valueType": {
+        "abbreviation": "FV",
+        "name": "FDVP",
+        "id": "197",
+        "shortName": "FA VENTA P",
+        "description": "FACTURA DE VENTA"
+      },
+      "cancellation": null,
+      "periodDateTo": null,
+      "items": [
+        {
+          "itemNumber": 2,
+          "unitPrice": 19500,
+          "quantity": 1,
+          "discount": 0,
+          "product": {
+            "id": "744828",
+            "modificationUser": {
+              "id": "4144",
+              "description": "GRACIELA GIMENEZ",
+              "alias": "GRACIELA"
+            },
+            "name": "DICLOGESIC PLUS B12 COMP X 20",
+            "creationDate": "2006-07-31T17:54:20.995-0300",
+            "barCode": "7795371459122",
+            "description": "DICLOGESIC PLUS B12 COMP X 20",
+            "dieCode": "5523842",
+            "shortName": "DICLOGES PLUS B12X20",
+            "creationUser": {
+              "description": "ADMINISTRADOR GENERAL",
+              "alias": "ADMINFTW",
+              "id": "1"
+            },
+            "modificationDate": "2026-01-30T17:33:17.207-0300",
+            "alfabetaCode": "38598",
+            "externalCode": null
+          },
+          "costPrice": 0,
+          "amount": 17550,
+          "vatRate": {
+            "aliquot": 0,
+            "id": "1",
+            "description": "EXENTO",
+            "name": "E",
+            "externalCode": "E"
+          },
+          "totalDiscount": 1950,
+          "id": "134940000000606209",
+          "observation": null,
+          "number": "134940000000606209"
+        }
+      ],
+      "metadata": null,
+      "mainAmount": 17550,
+      "authorizationExpirationDate": "2026-02-12T00:00:00.000-0300",
+      "sourceVoucherNumber": "9999-00021630",
+      "_branch": "FCIA BIOSALUD"
+    },
+    {
+      "vatPeriod": {
+        "id": "1349400116",
+        "description": "2/2026"
+      },
+      "status": {
+        "description": "INGRESADO",
+        "color": "NEUTRAL",
+        "name": "INGR",
+        "id": "4"
+      },
+      "authorizationExpirationDate": "2026-02-12T00:00:00.000-0300",
+      "valueType": {
+        "name": "FDVP",
+        "description": "FACTURA DE VENTA",
+        "shortName": "FA VENTA P",
+        "id": "197",
+        "abbreviation": "FV"
+      },
+      "subValueType": {
+        "id": "337",
+        "description": "FACTURA DE VENTA"
+      },
+      "observations": "",
+      "creationUser": {
+        "alias": "IVAN",
+        "id": "1349400003",
+        "description": "GARAY IVAN"
+      },
+      "fiscalType": "E",
+      "authorizationType": {
+        "id": "3",
+        "description": "CAE"
+      },
+      "codification": "0001-00072565",
+      "generalDiscount": null,
+      "expirationDate": "2026-03-04T09:45:02.256-0300",
+      "actualizationDate": "2026-02-02T09:45:07.663-0300",
+      "modificationDate": "2026-02-02T09:45:03.439-0300",
+      "metadata": null,
+      "authorizationDate": null,
+      "creationNode": {
+        "hierarchicalCode": "000.004.015.001.001",
+        "type": null,
+        "updateDate": null,
+        "name": "FCIA BIOSALUD",
+        "shortName": "FCIA BIOSALUD",
+        "status": null,
+        "externalCode": null,
+        "code": "000.004.015.001.001",
+        "id": "2378041"
+      },
+      "receipt": null,
+      "cancellation": null,
+      "periodDateFrom": null,
+      "modificationUser": {
+        "id": "1349400001",
+        "alias": "SIL",
+        "description": "SILVIA ALONSO"
+      },
+      "periodDateTo": null,
+      "creationDate": "2026-02-02T09:45:02.256-0300",
+      "letter": "B",
+      "address": null,
+      "modificationNode": {
+        "status": null,
+        "name": "FCIA BIOSALUD",
+        "id": "2378041",
+        "externalCode": null,
+        "type": null,
+        "updateDate": null,
+        "shortName": "FCIA BIOSALUD",
+        "code": "000.004.015.001.001",
+        "hierarchicalCode": "000.004.015.001.001"
+      },
+      "agreements": [
+        {
+          "receipt": 134940000000272700,
+          "concepts": null,
+          "order": "2",
+          "observations": null,
+          "codification": "Efectivo",
+          "status": {
+            "name": "ENTR",
+            "id": "43",
+            "description": "ENTREGADO",
+            "color": "NEUTRAL"
+          },
+          "subValueType": {
+            "id": "11",
+            "description": "BILLETE"
+          },
+          "modificationUser": {
+            "alias": "SIL",
+            "id": "1349400001",
+            "description": "SILVIA ALONSO"
+          },
+          "type": "cash",
+          "vatPeriod": null,
+          "authorizationNumber": null,
+          "externalCode": null,
+          "modificationDate": "2026-02-02T09:45:03.451-0300",
+          "metadata": null,
+          "modificationNode": {
+            "shortName": "FCIA BIOSALUD",
+            "hierarchicalCode": "000.004.015.001.001",
+            "id": "2378041",
+            "status": null,
+            "externalCode": null,
+            "updateDate": null,
+            "code": "000.004.015.001.001",
+            "type": null,
+            "name": "FCIA BIOSALUD"
+          },
+          "valueType": {
+            "name": "BILLE",
+            "shortName": "BILLETE",
+            "description": "BILLETE",
+            "abbreviation": null,
+            "id": "3"
+          },
+          "authorizationDate": null,
+          "expirationDate": "2026-03-04T09:45:02.256-0300",
+          "effective": {
+            "shortName": "$$$",
+            "status": "ACTIVO",
+            "updateDate": "2024-07-24T15:28:56.989-0300",
+            "name": "EFECTIVO",
+            "id": "141",
+            "type": "EFECTIVO",
+            "code": "23",
+            "externalCode": "CONSUMIDOR FINAL"
+          },
+          "authorizationType": null,
+          "actualizationDate": "2026-02-02T09:45:07.663-0300",
+          "creationUser": {
+            "description": "GARAY IVAN",
+            "id": "1349400003",
+            "alias": "IVAN"
+          },
+          "id": "134940000000272697",
+          "emissionDate": "2026-02-02T09:45:02.256-0300",
+          "generalDiscount": null,
+          "creationDate": "2026-02-02T09:45:02.256-0300",
+          "operations": null,
+          "mainAmount": 1800,
+          "creationNode": {
+            "name": "FCIA BIOSALUD",
+            "hierarchicalCode": "000.004.015.001.001",
+            "externalCode": null,
+            "code": "000.004.015.001.001",
+            "type": null,
+            "shortName": "FCIA BIOSALUD",
+            "id": "2378041",
+            "updateDate": null,
+            "status": null
+          },
+          "authorizationExpirationDate": null
+        },
+        {
+          "valueType": {
+            "description": "BILLETE",
+            "abbreviation": null,
+            "shortName": "BILLETE",
+            "name": "BILLE",
+            "id": "3"
+          },
+          "modificationDate": "2026-02-02T09:45:03.451-0300",
+          "expirationDate": "2026-03-04T09:45:02.256-0300",
+          "observations": null,
+          "id": "134940000000272697",
+          "modificationUser": {
+            "id": "1349400001",
+            "description": "SILVIA ALONSO",
+            "alias": "SIL"
+          },
+          "metadata": null,
+          "effective": {
+            "externalCode": "CONSUMIDOR FINAL",
+            "status": "ACTIVO",
+            "shortName": "$$$",
+            "name": "EFECTIVO",
+            "type": "EFECTIVO",
+            "updateDate": "2024-07-24T15:28:56.989-0300",
+            "code": "23",
+            "id": "141"
+          },
+          "creationDate": "2026-02-02T09:45:02.256-0300",
+          "order": "2",
+          "emissionDate": "2026-02-02T09:45:02.256-0300",
+          "creationUser": {
+            "id": "1349400003",
+            "alias": "IVAN",
+            "description": "GARAY IVAN"
+          },
+          "modificationNode": {
+            "type": null,
+            "externalCode": null,
+            "status": null,
+            "shortName": "FCIA BIOSALUD",
+            "code": "000.004.015.001.001",
+            "id": "2378041",
+            "name": "FCIA BIOSALUD",
+            "updateDate": null,
+            "hierarchicalCode": "000.004.015.001.001"
+          },
+          "status": {
+            "description": "ENTREGADO",
+            "id": "43",
+            "color": "NEUTRAL",
+            "name": "ENTR"
+          },
+          "receipt": 134940000000272700,
+          "concepts": null,
+          "generalDiscount": null,
+          "actualizationDate": "2026-02-02T09:45:07.663-0300",
+          "authorizationExpirationDate": null,
+          "externalCode": null,
+          "authorizationDate": null,
+          "type": "cash",
+          "operations": null,
+          "authorizationType": null,
+          "vatPeriod": null,
+          "creationNode": {
+            "code": "000.004.015.001.001",
+            "status": null,
+            "type": null,
+            "shortName": "FCIA BIOSALUD",
+            "updateDate": null,
+            "hierarchicalCode": "000.004.015.001.001",
+            "externalCode": null,
+            "name": "FCIA BIOSALUD",
+            "id": "2378041"
+          },
+          "codification": "Efectivo",
+          "authorizationNumber": null,
+          "subValueType": {
+            "id": "11",
+            "description": "BILLETE"
+          },
+          "mainAmount": 1800
+        }
+      ],
+      "mainAmount": 1800,
+      "order": "1",
+      "customer": {
+        "documentType": "DNI",
+        "documentNumber": "1",
+        "groupingEntity": null,
+        "externalCode": "9999900000001",
+        "id": "83172",
+        "name": "CONSUMIDOR FINAL, A",
+        "shortName": "CONSUMIDOR FINAL",
+        "vatSituation": {
+          "externalCode": "C",
+          "id": "3",
+          "description": "CONSUMIDOR FINAL",
+          "name": "CONS.FINAL"
+        },
+        "lastName": "CONSUMIDOR FINAL",
+        "code": "99999",
+        "cuit": "20-11111111-2",
+        "type": "CLIENTES",
+        "companyName": "CONSUMIDOR FINAL",
+        "email": "",
+        "firstName": "CONSUMIDOR FINAL, A",
+        "modificationDate": "2026-01-14T18:28:12.638-0300",
+        "status": "ACTIVO",
+        "updateDate": "2026-01-14T18:28:35.206-0300",
+        "address": null
+      },
+      "concepts": null,
+      "emissionDate": "2026-02-02T09:45:02.256-0300",
+      "authorizationNumber": "86052215668134",
+      "externalCode": null,
+      "emissionCenter": {
+        "type": "CENTROS DE EMISION",
+        "externalCode": null,
+        "updateDate": null,
+        "code": "1",
+        "shortName": "CE ELE BIO 01",
+        "id": "134940000000000010",
+        "status": null,
+        "name": "CE ELE BIO 01"
+      },
+      "items": [
+        {
+          "totalDiscount": 0,
+          "quantity": 1,
+          "number": "134940000000606221",
+          "discount": 0,
+          "product": {
+            "alfabetaCode": null,
+            "modificationDate": "2024-06-13T15:38:38.552-0300",
+            "description": "* OMEPRAZOL 20 MG X14",
+            "modificationUser": {
+              "description": "BETIANA CORIA",
+              "id": "1349400006",
+              "alias": "7"
+            },
+            "dieCode": "",
+            "creationUser": {
+              "id": "1349400000",
+              "alias": "M",
+              "description": "M"
+            },
+            "externalCode": null,
+            "id": "134940000000000744",
+            "name": "* OMEPRAZOL 20 MG X14",
+            "creationDate": "2023-08-08T09:48:06.036-0300",
+            "barCode": "9991",
+            "shortName": "* OMEPRAZOL 20 MG X1"
+          },
+          "observation": null,
+          "itemNumber": 1,
+          "unitPrice": 1800,
+          "vatRate": {
+            "externalCode": "E",
+            "description": "EXENTO",
+            "id": "1",
+            "name": "E",
+            "aliquot": 0
+          },
+          "amount": 1800,
+          "id": "134940000000606221",
+          "costPrice": 0
+        }
+      ],
+      "sourceVoucherNumber": null,
+      "phone": null,
+      "operations": null,
+      "id": "134940000000272696",
+      "_branch": "FCIA BIOSALUD"
+    }
+  ],
+  "mappedSalesSample": [
+    {
+      "id": "134940000000272688-134940000000606209",
+      "invoiceNumber": "0001-00072564",
+      "date": "2026-02-02T12:38:04.119Z",
+      "monthYear": "2026-02",
+      "productName": "DICLOGESIC PLUS B12 COMP X 20",
+      "quantity": 1,
+      "unitPrice": 19500,
+      "totalAmount": 17550,
+      "category": "ESP. MEDICINAL",
+      "branch": "FCIA BIOSALUD",
+      "sellerName": "SILVIA ALONSO",
+      "entity": "CLIENTES FIELES",
+      "paymentMethod": "MODO",
+      "barcode": "7795371459122",
+      "manufacturer": "TRB-PHARMA",
+      "unitCost": 0,
+      "hour": 9
+    },
+    {
+      "id": "134940000000272696-134940000000606221",
+      "invoiceNumber": "0001-00072565",
+      "date": "2026-02-02T12:45:02.256Z",
+      "monthYear": "2026-02",
+      "productName": "* OMEPRAZOL 20 MG X14",
+      "quantity": 1,
+      "unitPrice": 1800,
+      "totalAmount": 1800,
+      "category": "ESP. MEDICINAL",
+      "branch": "FCIA BIOSALUD",
+      "sellerName": "SILVIA ALONSO",
+      "entity": "Particular",
+      "paymentMethod": "Efectivo",
+      "barcode": "9991",
+      "manufacturer": "BIOTENK",
+      "unitCost": 0,
+      "hour": 9
+    }
+  ]
+}

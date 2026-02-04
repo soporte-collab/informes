@@ -137,6 +137,8 @@ export const MixMaestroDashboard: React.FC<MixMaestroDashboardProps> = ({
         let totalCash = 0;
         let totalCard = 0;
         let totalChecking = 0;
+        let totalWallets = 0;
+        let totalTransfers = 0;
 
         filteredData.forEach(tx => {
             const typeValue = (tx.type || '').toUpperCase();
@@ -155,11 +157,33 @@ export const MixMaestroDashboard: React.FC<MixMaestroDashboardProps> = ({
             } else {
                 totalNet += amount;
 
-                // --- PAYMENT METHOD BREAKDOWN ---
-                if (tx.paymentMethod === 'Obra Social') totalInsurance += amount;
-                else if (tx.paymentMethod === 'Efectivo') totalCash += amount;
-                else if (tx.paymentMethod === 'Cuenta Corriente') totalChecking += amount;
-                else totalCard += amount; // Fallback to Card
+                // --- PAYMENT METHOD BREAKDOWN (PRECISE) ---
+                if (tx.hasFinancialDetail) {
+                    totalInsurance += (tx.osAmount || 0);
+                    totalCash += (tx.cashAmount || 0);
+                    totalCard += (tx.cardAmount || 0);
+                    totalChecking += (tx.ctacteAmount || 0);
+
+                    // If main payment method was Wallet, we can attribute card amount to wallet for display, 
+                    // but since cardAmount aggregates both, we'll keep it in Card for financial accuracy 
+                    // or check providing a split if needed later. For now, strict sums.
+                    if (tx.paymentMethod === 'Billetera Digital') {
+                        totalWallets += (tx.cardAmount || 0);
+                        totalCard -= (tx.cardAmount || 0);
+                    }
+                    if (tx.paymentMethod === 'Transferencia') {
+                        totalTransfers += (tx.cashAmount || 0);
+                        totalCash -= (tx.cashAmount || 0);
+                    }
+                } else {
+                    // Fallback for legacy data
+                    if (tx.paymentMethod === 'Obra Social') totalInsurance += amount;
+                    else if (tx.paymentMethod === 'Efectivo') totalCash += amount;
+                    else if (tx.paymentMethod === 'Transferencia') totalTransfers += amount;
+                    else if (tx.paymentMethod === 'Cuenta Corriente') totalChecking += amount;
+                    else if (tx.paymentMethod === 'Billetera Digital') totalWallets += amount;
+                    else totalCard += amount;
+                }
             }
 
             totalItems += (tx.items?.length || 0);
@@ -197,7 +221,9 @@ export const MixMaestroDashboard: React.FC<MixMaestroDashboardProps> = ({
             totalInsurance,
             totalCash,
             totalCard,
-            totalChecking
+            totalChecking,
+            totalWallets,
+            totalTransfers
         };
     }, [filteredData, filteredExpenses, filteredServices]);
 
@@ -447,6 +473,22 @@ export const MixMaestroDashboard: React.FC<MixMaestroDashboardProps> = ({
                                 <p className="text-sm font-black text-slate-800">{formatMoney(metrics.totalCard)}</p>
                                 <div className="w-full h-1 bg-slate-200 mt-2 rounded-full overflow-hidden">
                                     <div className="h-full bg-indigo-500" style={{ width: `${(metrics.totalCard / metrics.totalNet) * 100}%` }}></div>
+                                </div>
+                            </div>
+                            {/* Billeteras */}
+                            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Billeteras</p>
+                                <p className="text-sm font-black text-slate-800">{formatMoney(metrics.totalWallets)}</p>
+                                <div className="w-full h-1 bg-slate-200 mt-2 rounded-full overflow-hidden">
+                                    <div className="h-full bg-orange-500" style={{ width: `${(metrics.totalWallets / metrics.totalNet) * 100}%` }}></div>
+                                </div>
+                            </div>
+                            {/* Transferencias */}
+                            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Transferencias</p>
+                                <p className="text-sm font-black text-slate-800">{formatMoney(metrics.totalTransfers)}</p>
+                                <div className="w-full h-1 bg-slate-200 mt-2 rounded-full overflow-hidden">
+                                    <div className="h-full bg-cyan-500" style={{ width: `${(metrics.totalTransfers / metrics.totalNet) * 100}%` }}></div>
                                 </div>
                             </div>
                             {/* Obras Sociales */}

@@ -159,10 +159,10 @@ const App: React.FC = () => {
                 name: sale.productName,
                 quantity: sale.quantity,
                 unitPrice: sale.unitPrice,
-                unitCost: sale.cost || 0,
+                unitCost: sale.unitCost || 0,
                 totalPrice: sale.totalAmount,
-                totalCost: (sale.cost || 0) * sale.quantity,
-                profit: sale.totalAmount - ((sale.cost || 0) * sale.quantity),
+                totalCost: (sale.unitCost || 0) * sale.quantity,
+                profit: sale.totalAmount - ((sale.unitCost || 0) * sale.quantity),
                 manufacturer: sale.manufacturer || '-',
                 category: sale.category || '-'
             });
@@ -174,11 +174,25 @@ const App: React.FC = () => {
     const [supplierCategories, setSupplierCategories] = useState<Record<string, string>>({});
 
     useEffect(() => {
-        const unsubscribe = firebaseAuth.onAuthStateChanged(auth, (user) => {
-            setUser(user);
+        // Detect 403 API Key blocking from referer
+        const originalFetch = window.fetch;
+        window.fetch = async (...args) => {
+            const resp = await originalFetch(...args);
+            if (resp.status === 403 && args[0].toString().includes('identitytoolkit')) {
+                console.error("CRITICAL: Firebase API Key is blocked by referrer restriction.");
+                alert("⚠️ ERROR CRÍTICO: La API Key de Firebase está bloqueada para este dominio. Por favor, ve a Google Cloud Console y agrega 'informes-a551f.firebaseapp.com' a los referrers permitidos de la API Key.");
+            }
+            return resp;
+        };
+
+        const unsubscribe = auth.onAuthStateChanged((u) => {
+            setUser(u);
             setAuthLoading(false);
         });
-        return unsubscribe;
+        return () => {
+            unsubscribe();
+            window.fetch = originalFetch;
+        };
     }, []);
 
     useEffect(() => {
@@ -309,7 +323,23 @@ const App: React.FC = () => {
     const handleInsuranceUpload = (e: React.ChangeEvent<HTMLInputElement>) => { /* ... */ };
 
     const handleZettiImport = async (data: any) => {
-        // Refresh all data from DB after sync in background
+        // Use the passed data directly to avoid race conditions with Storage propagation
+        if (data) {
+            if (data.sales) setSalesData(data.sales);
+            if (data.invoices) setInvoiceData(data.invoices);
+            if (data.expenses) setExpenseData(data.expenses);
+            if (data.insurance) setInsuranceData(data.insurance);
+            if (data.currentAccounts) setCurrentAccountData(data.currentAccounts);
+
+            // For services, we still need to combine with potentially existing ones or just update from data
+            if (data.expenses || data.services) {
+                const combinedServices = [...(data.expenses || []), ...(data.services || [])];
+                setServiceData(combinedServices);
+            }
+            return;
+        }
+
+        // Fallback: Refresh all data from DB if no direct data passed
         try {
             const [sales, invoices, expenses, currentAccounts, stock, insurance, services, cats] = await Promise.all([
                 getAllSalesFromDB(),
@@ -329,10 +359,7 @@ const App: React.FC = () => {
             setStockData(stock);
             setInsuranceData(insurance);
             if (cats) setSupplierCategories(cats);
-
-            // Combine API expenses (potential services) + Manual Services
             setServiceData([...expenses, ...services]);
-
         } catch (error) {
             console.error("Error refreshing data:", error);
         }

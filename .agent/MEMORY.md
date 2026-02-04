@@ -40,6 +40,10 @@ La API de Zetti reside en un servidor HTTP (`http://190.15.199.103:8089`) y no s
 ### Manejo de Datos de Negocio
 - **Venta Media Diaria (VMD)**: Se calcula consultando estadísticas históricas.
 - **IDs de Sucursales**: 2378041 (Paseo Stare), 2406943 (Chacras Park).
+- **Deduplicación Crítica (Zetti)**: 
+  - Zetti puede devolver la misma factura varias veces en una sola consulta (típico cuando hay pagos con tarjeta).
+  - **REGLA DE ORO**: Siempre deduplicar por `id` único de factura antes de cualquier cálculo.
+  - **Cálculo de Totales**: NO confiar en el campo `mainAmount` de la factura raíz si hay discrepancias. La fuente de verdad definitiva es la **SUMA de items.amount** filtrada por productos reales (ignorando líneas técnicas/resumen).
 
 ## Sincronización Oficina <-> Casa (Git Workflow)
 
@@ -109,11 +113,40 @@ La API de Zetti reside en un servidor HTTP (`http://190.15.199.103:8089`) y no s
   - **Detección de Montos**: Se ajustó la lógica en `functions/index.js` para capturar montos desde múltiples campos posibles (`totalAmount`, `mainAmount`, `amount`, `netAmount`) tanto en facturas como en ítems.
   - **Corrección de Paginación**: Se arregló un bug crítico donde una variable indefinida (`pageContent`) cortaba la sincronización prematuramente después de la primera página.
 - **Robustez de Datos**: Se integró `parseCurrency` en el proceso de guardado para limpiar strings con comas decimales (formato AR) y asegurar que las métricas del dashboard operen con números reales.
+- **Optimización de Límite Firestore**: Se redujo el tamaño del lote de escritura/lectura del Maestro de Productos de 5,000 a 1,000 para evitar errores de cuota (`Limit value is over...`) en bases de datos grandes (+80k productos).
 
-## Pendientes / Próximos Pasos
-1. **Investigar "Ventas Totales $0"**: A pesar de las mejoras, algunos reportes muestran transacciones pero monto total 0. Posiblemente por datos cacheados incorrectos o campos inconsistentes en el objeto `items` de Zetti. 
-2. **Purga y Re-sync**: Se recomienda al usuario purgar las fechas conflictivas (01/02 al 03/02) y volver a sincronizar para validar el fix de montos.
-3. **KPIs de Eficiencia**: Desarrollar la lógica de ventas por hora/empleado cruzando Fichadas con Ventas Zetti.
+### 6. Estrategia Futura: Limpieza Inteligente del Maestro (Product Master Purge)
+- **Problema Detectado**: La base de datos maestra contiene una cantidad excesiva de productos (80,000+) en comparación con el surtido real activo de la farmacia (aprox. 2,500 productos). Esto ralentiza las búsquedas y sincronizaciones innecesariamente.
+- **Objetivo**: Implementar una herramienta de "Depuración Maestra" que elimine automáticamente productos inactivos (invendibles) tras un periodo de tiempo (ej. 1 año).
+- **Plan de Implementación Propuesto**:
+    1.  **Marcar Actividad**: Modificar el `ZettiSync` para que, cada vez que procese una venta, actualice un campo `lastSoldDate` en el documento del producto correspondiente en Firestore.
+    2.  **Análisis de "Muertos"**: Crear un script (preferiblemente una Cloud Function programada mensual) que busque productos donde `lastSoldDate` sea menor a `HOY - 365 días` (y que no tengan stock actual > 0).
+    3.  **Ejecución Segura**:
+        -   **Fase 1 (Soft Delete)**: Marcar productos como `status: 'ARCHIVED'`.
+        -   **Fase 2 (Hard Delete)**: Eliminar definitivamente tras confirmación manual o periodo de gracia.
+    4.  **Beneficio**: Reducir el tamaño de la colección en un ~95%, acelerando drásticamente todas las consultas futuras.
+
+### 7. Solución Definitiva a Duplicaciones y Fuente Única (03 de Feb, 2026)
+- **Problema**: Zetti envía facturas duplicadas (tarjetas) e ítems duplicados (resúmenes técnicos), lo que inflaba la facturación al doble o triple.
+- **Acción Realizada**: **RE-ESCRITURA TOTAL** (no reparación) de la lógica de importación y KPIs.
+- **Implementación**:
+    - **Sincronización (`ZettiSync.tsx`)**: Ahora ignora todos los campos de total de Zetti. Recalcula el total de cada factura sumando uno a uno los productos válidos (aquellos con ID y nombre real).
+    - **KPIs (`InvoiceDashboard.tsx`)**: Se implementó deduplicación por ID de factura mediante `Map` antes de cualquier cálculo.
+    - **Banner de Validación**: Sincronizado para usar la misma fuente que el total visible (productos).
+- **Estado Actual**: Aunque el código es matemáticamente perfecto, persiste un acumulado de **$26,015,441** en el dashboard. 
+- **Hipótesis de Bloqueo**: Se sospecha que quedan datos "sucios" de sincronizaciones anteriores en la base de datos local (IndexedDB) que no fueron borrados correctamente, o que el proceso de "Borrar Datos" tiene una fuga con ciertos registros (ej. transferencias o notas de crédito mal clasificadas).
+
+### 8. REGLAS DE ORO (FUENTES DE VERDAD)
+Estas reglas son de cumplimiento OBLIGATORIO para evitar discrepancias:
+
+1.  **REGLA 0 – FUENTE ÚNICA**: Si hay productos visibles, todo (total, validación y KPIs) debe salir de la misma fuente. Prohibido mezclar totales calculados con totales cacheados.
+2.  **REGLA 1 – PRODUCTOS**: Un producto válido es un ítem con referencia real (nombre/barcode/id). Ítems técnicos o resúmenes se ignoran.
+3.  **REGLA 2 – TOTAL DE FACTURA**: `TotalFactura = SUMA(productos válidos)`. No se usan campos agregados (`netAmount`, `tot`) cuando hay productos.
+4.  **REGLA 3 – PAGOS**: Los pagos (Tarjeta, Efectivo, OS) solo describen CÓMO se cobró, nunca cuánto se facturó. No afectan al total.
+5.  **REGLA 4 – VALIDACIÓN (BANNER)**: La validación compara la misma fuente que el total mostrado. Si el total sale de productos, la validación usa productos.
+6.  **REGLA 5 – KPIs**: Antes de calcular KPIs, deduplicar facturas por ID. Una factura cuenta una sola vez.
+7.  **REGLA 6 – PROHIBICIONES**: Nunca sumar items + pagos. Nunca validar contra un valor que no se muestra.
+8.  **REGLA FINAL**: Lo que se ve = lo que se suma = lo que se valida.
 
 ---
-*Última actualización: 03 de Febrero, 2026*
+*Última actualización: 03 de Febrero, 2026 - 23:45hs*

@@ -178,15 +178,23 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
     // Aggregated Stats
     const stats = useMemo(() => {
-        const totalSales = filteredData.reduce((acc, curr) => {
+        let totalSales = 0;
+        let missingAmounts = 0;
+
+        filteredData.forEach(curr => {
             const val = Number(curr.totalAmount);
-            return isNaN(val) ? acc : acc + val;
-        }, 0);
+            if (isNaN(val) || val === 0) {
+                missingAmounts++;
+            } else {
+                totalSales += val;
+            }
+        });
+
         const totalTransactions = filteredData.length;
         const totalUnits = filteredData.reduce((acc, curr) => acc + (Number(curr.quantity) || 0), 0);
         const upt = totalTransactions > 0 ? totalUnits / totalTransactions : 0;
 
-        return { totalSales, totalTransactions, totalUnits, upt };
+        return { totalSales, totalTransactions, totalUnits, upt, hasAnomalies: missingAmounts > 0 && totalTransactions > 0 && totalSales === 0 };
     }, [filteredData]);
 
     // Branch Breakdown Logic for Modal
@@ -1308,7 +1316,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             <ShieldCheck className="w-4 h-4 text-indigo-400" />
                             <span className="text-[10px] font-black text-indigo-300 uppercase tracking-[0.2em]">Módulo de Auditoría</span>
                         </div>
-                        <h3 className="text-4xl font-black text-white mb-4 uppercase tracking-tighter">Buscador Inteligente de Stock</h3>
+                        <h3 className="text-2xl font-black">{formatMoney(stats.totalSales)}</h3>
+                        {stats.hasAnomalies && (
+                            <p className="text-[10px] text-red-100 font-bold mt-1 bg-red-500/20 px-2 py-0.5 rounded-full inline-block animate-pulse">
+                                ⚠️ DATOS EN $0 DETECTADOS
+                            </p>
+                        )}
+                        <p className="text-indigo-100/60 text-[10px] font-bold uppercase mt-1">Bruto Total (Selección)</p>
                         <p className="text-indigo-200/60 text-sm font-bold uppercase tracking-widest mb-12">Analice la trazabilidad y evolución de cualquier unidad del inventario</p>
 
                         <div className="relative group max-w-3xl mx-auto">

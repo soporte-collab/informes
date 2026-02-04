@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { eachDayOfInterval, parseISO } from 'date-fns';
-import { RefreshCw, Database, CloudLightning, ShieldCheck, AlertCircle, CheckCircle2, Search, Download, User, ShoppingBag, CreditCard, ChevronDown, HeartPulse, Trash2, Calendar, Upload, Truck, Wallet, Eye, FileJson, Layers, X } from 'lucide-react';
+import { RefreshCw, Database, CloudLightning, ShieldCheck, AlertCircle, CheckCircle2, Search, Download, User, ShoppingBag, CreditCard, ChevronDown, HeartPulse, Trash2, Calendar, Upload, Truck, Wallet, Eye, FileJson, Layers, X, HardDrive } from 'lucide-react';
 import { searchZettiInvoices, searchZettiInvoiceByNumber, ZETTI_NODES, searchZettiProviderReceipts, searchZettiInsuranceReceipts, searchZettiCustomers } from '../utils/zettiService';
 import { formatMoney, parseCurrency } from '../utils/dataHelpers';
 import { format } from 'date-fns';
 import { InvoiceRecord, SaleRecord, ExpenseRecord, InsuranceRecord, CurrentAccountRecord } from '../types';
 import { functions } from '../src/firebaseConfig';
 import { httpsCallable } from 'firebase/functions';
-import { purgeDataByDateRange, saveProductMasterToDB, saveSalesToDB, saveInvoicesToDB, saveExpensesToDB, saveInsuranceToDB, saveCurrentAccountsToDB, saveServicesToDB, getMetadata } from '../utils/db';
+import { purgeDataByDateRange, saveProductMasterToDB, saveSalesToDB, saveInvoicesToDB, saveExpensesToDB, saveInsuranceToDB, saveCurrentAccountsToDB, saveServicesToDB, getMetadata, getAllProductMasterFromDB, getAllSalesFromDB } from '../utils/db';
 
 interface ZettiSyncProps {
     startDate: string;
@@ -232,6 +232,51 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
         setLogs([]);
         addLog(`Iniciando sincronización desde ${startDate} hasta ${endDate}`, 'info');
 
+        // --- PASO 0: Sincronizar Maestro de Productos (Automático) ---
+        addLog('🔄 Paso 0: Actualizando base de productos desde la nube...', 'info');
+        try {
+            const { db } = await import('../src/firebaseConfig');
+            const { collection, getDocs, limit, query, startAfter, orderBy } = await import('firebase/firestore');
+
+            // BATCH LOADING: Firestore impone límites, así que cargamos en lotes de 5000
+            let allProducts: any[] = [];
+            let lastDoc = null;
+            let keepFetching = true;
+
+            while (keepFetching) {
+                let constraints: any[] = [orderBy('__name__'), limit(1000)]; // Limit lowered to 1000
+                if (lastDoc) {
+                    constraints.push(startAfter(lastDoc));
+                }
+
+                const q = query(collection(db, 'zetti_products_master'), ...constraints);
+                const snapshot = await getDocs(q);
+
+                if (snapshot.empty) {
+                    keepFetching = false;
+                } else {
+                    const batch = snapshot.docs.map(doc => doc.data());
+                    allProducts = [...allProducts, ...batch];
+                    lastDoc = snapshot.docs[snapshot.docs.length - 1];
+                    addLog(`📥 Descargados ${allProducts.length} productos...`, 'info');
+
+                    if (snapshot.docs.length < 1000) keepFetching = false;
+                }
+            }
+
+            const master = allProducts;
+
+            if (master.length > 0) {
+                await saveProductMasterToDB(master);
+                addLog(`✅ Maestro actualizado (${master.length} productos).`, 'success');
+            } else {
+                addLog('⚠️ El maestro en la nube parece estar vacío, se usará la versión local.', 'warn');
+            }
+        } catch (masterError: any) {
+            console.error("Master Sync Error:", masterError);
+            addLog(`⚠️ Error al conectar con Firestore (${masterError.code || 'quota'}). Usando maestro local.`, 'warn');
+        }
+
         try {
             const days = eachDayOfInterval({
                 start: parseISO(startDate),
@@ -400,93 +445,208 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
         const invoices: InvoiceRecord[] = [];
         const allSales: SaleRecord[] = [];
 
-        // Cargamos el maestro de productos para enriquecer categorías manuales
         const { getAllProductMasterFromDB } = await import('../utils/db');
         const productMaster = await getAllProductMasterFromDB();
         const masterMap = new Map();
         productMaster.forEach(p => {
-            if (p.barcode) masterMap.set(p.barcode, p);
+            if (p.barcode) masterMap.set(p.barcode.toString().trim(), p);
         });
 
+        const SELLER_MAP: Record<string, string> = {
+            'LDICKSTEIN': 'LUCAS DICKSTEIN',
+            'FLA': 'DIBLASI FLAVIA',
+            'IVAN': 'IVAN GARAY',
+            'DIAME': 'DIAMELA OJEDA',
+            'SHEILA': 'SHEILA BRAHIM',
+            'ADMINFTW': 'ADMINISTRACION',
+            'ZZ LORENA': 'LORENA',
+            'SIL': 'SILVIA ALONSO',
+            'CARLA': 'CARLA'
+        };
+
         raw.sales.forEach(item => {
-            const rawDate = item.fec || new Date().toISOString();
-            const payments = item.pagos || [];
-            const agreement = payments.find((p: any) => p.t === 'agreement' || p.t === 'prescription');
-            const card = payments.find((p: any) => p.t === 'card' || p.t === 'cardInstallment');
-            const checking = payments.find((p: any) => p.t === 'checkingAccount');
+            const rawDate = item.fec || item.emissionDate || new Date().toISOString();
+            // PRIMACÍA DE AGREEMENTS: Es la fuente de la verdad financiera
+            const agreements = item.agreements || item.values || item.pagos || [];
 
+            let totalCash = 0;
+            let totalCard = 0;
+            let totalOS = 0;
+            let totalCTACTE = 0;
             let mainPay = 'Efectivo';
-            if (agreement) mainPay = 'Obra Social';
-            else if (card) mainPay = card.n || 'Tarjeta';
-            else if (checking) mainPay = 'Cuenta Corriente';
+            let isModo = false;
+            let hasValidPayment = false;
 
-            let insuranceAmount = 0;
-            const entity = agreement?.n || 'Particular'; // Restored
+            // Recorremos los acuerdos de pago para armar el "Puzzle Financiero"
+            agreements.forEach((v: any) => {
+                // REGLA AUDITORIA #9: Si un pago está anulado, excluir explícitamente.
+                if (v.cancellation || v.anulado) return;
 
-            // 1. Intentar sacar el monto de la Obra Social desde "operations" (Nuevo Túnel Deep)
-            if (item.operations && item.operations.length > 0) {
-                // Buscamos operaciones que sean de tipo cobro por OS o similar
-                // (En Zetti, la OS suele ser una operación con ciertos IDs, pero a falta de ID exacto,
-                // buscamos por descarte o por match con el agreement)
-                const opOS = item.operations.find((op: any) =>
-                    op.operationType?.id === '10' || op.operationType?.description?.toUpperCase().includes('RECETA') ||
-                    op.operationType?.description?.toUpperCase().includes('PLAN')
-                );
-                if (opOS) {
-                    insuranceAmount = opOS.amount || opOS.mainAmount || 0;
+                const amount = parseCurrency(v.mainAmount || v.amount || v.importe || v.total || v.value || 0);
+
+                const typeId = v.valueType?.id?.toString() || v.typeId?.toString();
+                const typeName = (v.valueType?.name || v.t || v.name || '').toUpperCase();
+                const subType = (v.subValueType?.description || '').toUpperCase();
+
+                // Placeholder de Efectivo anulado o 0 no suma si es 'cash', pero otros tipos sí pueden ser 0 conceptualmente? 
+                // Mejor ignorar 0 en general excepto si es el único.
+                if (amount === 0) return;
+
+                hasValidPayment = true;
+
+                // 1. OBRAS SOCIALES (El aporte institucional)
+                if (typeId === '2' || typeId === '211' || v.t === 'prescription' || typeName.includes('CONVENIO') || typeName.includes('PAMI') || typeName.includes('OS') || typeName.includes('RECE')) {
+                    totalOS += amount;
+                    if (mainPay === 'Efectivo') mainPay = 'Obra Social';
+                }
+                // 2. CUENTAS CORRIENTES (Explícitas)
+                else if (typeId === '22' || v.t === 'checkingAccount' || typeName.includes('CTA') || typeName.includes('CORRIENTE')) {
+                    totalCTACTE += amount;
+                    if (mainPay === 'Efectivo') mainPay = 'Cuenta Corriente';
+                }
+                // 3. TARJETAS (Lo que paga el cliente con plástico)
+                else if (typeId === '9' || v.card || typeName.includes('TARJ') || subType.includes('TARJETA') || v.t === 'card' || v.t === 'cardInstallment') {
+                    totalCard += amount;
+                    if (v.card?.name?.toUpperCase().includes('MODO')) isModo = true;
+                    if (mainPay === 'Efectivo' || mainPay === 'Obra Social') mainPay = v.card?.name || 'Tarjeta';
+                }
+                // 4. BILLETERAS DIGITALES (MODO, MP, QR)
+                else if (typeName.includes('MODO') || typeName.includes('QR') || typeName.includes('MP') || typeName.includes('MERCADO')) {
+                    totalCard += amount;
+                    isModo = true;
+                    mainPay = 'Billetera Digital';
+                }
+                // 5. EFECTIVO (El resto o explícito)
+                else {
+                    totalCash += amount;
+                }
+            });
+
+            if (isModo) mainPay = 'MODO';
+
+            // REGLA AUDITORIA #5: Si existe agreement (entidad) y NO existe ningún pago real, clasificar como CTA CTE.
+            const hasEntity = item.healthInsuranceProvider || item.entity || item.customer;
+            if (!hasValidPayment && hasEntity && totalOS === 0 && totalCash === 0 && totalCard === 0) {
+                // Intentamos rescatar el monto del total de la factura
+                const headerTotal = parseCurrency(item.tot || item.mainAmount || 0);
+                if (headerTotal > 0) {
+                    totalCTACTE = headerTotal;
+                    mainPay = 'Cuenta Corriente';
                 }
             }
 
-            // 2. Si no, intentar desde agreements (Legacy o si Zetti lo manda directo)
-            if (insuranceAmount === 0 && agreement) {
-                insuranceAmount = agreement.mainAmount || agreement.amount || 0;
+            // REGLA DE ORO DE ZETTI: El total del header debe coincidir con la venta neta real.
+            const sumValues = totalCash + totalCard + totalOS + totalCTACTE;
+            let finalTotal = sumValues;
+
+            // Fallback: Si agreements vacíos o 0, usamos header o items
+            if (finalTotal === 0) {
+                const headerTotal = parseCurrency(item.tot || item.mainAmount || 0);
+                const itemSum = (item.items || []).reduce((acc: number, it: any) => acc + parseCurrency(it.sub), 0);
+                finalTotal = itemSum > 0 ? itemSum : headerTotal;
             }
 
-            // Si es obv. social pero amount es 0, a veces Zetti pone el total en "tot"
-            // NO ASUMIMOS NADA SI ES 0.
+            // Skip anomaly "BILLETE" entries with 0 amount (Solo basura)
+            if (finalTotal === 0 && (item.tco || '').toUpperCase().includes('BILLETE')) return;
 
+            // MAPEO DE CLIENTE: Prioridad al nombre real del cliente
+            const finalClient = item.customer?.firstName
+                ? `${item.customer.lastName} ${item.customer.firstName}`.trim()
+                : (item.cli || item.customer?.name || 'CONSUMIDOR FINAL');
+
+            // MEJORA NOMBRE OBRA SOCIAL: Buscar en profundidad el nombre de la entidad
+            let entityName = item.healthInsuranceProvider?.name || item.entity?.name;
+
+            // Si no está en el root, buscamos en los agreements de tipo prescription
+            if (!entityName) {
+                const agrOS = agreements.find((a: any) => a.healthInsurance || a.entity);
+                if (agrOS) {
+                    entityName = agrOS.healthInsurance?.name || agrOS.entity?.name;
+                }
+            }
+
+            // Fallback final
+            const entity = entityName || (totalOS > 0 ? 'Obra Social' : 'Particular');
+
+            // --- RESTORED LOGIC START ---
             let normalizedType = 'FV';
             const tco = (item.tco || '').toUpperCase();
             if (tco.includes('NC') || tco.includes('CREDITO')) normalizedType = 'NC';
             else if (tco.includes('TRANSFER') || tco.includes('TX')) normalizedType = 'TX';
             else normalizedType = item.tco || 'FV';
 
+            const normalizedDate = new Date(rawDate.includes('T') ? rawDate : `${rawDate.split(' ')[0]}T12:00:00`);
+
+            // MAPEO DE VENDEDOR REFINADO (REGLA AUDITORIA #3)
+            const userObj = item.modificationUser || item.creationUser;
+            const rawSeller = userObj?.alias || userObj?.description || item.seller?.name || item.ven || item.vendedor || 'BIO';
+            const finalSeller = SELLER_MAP[rawSeller.toUpperCase()] || rawSeller;
+            // --- RESTORED LOGIC END ---
+
+            // ID DETERMINISTA PARA EVITAR DUPLICADOS
+            const invoiceNumber = item.codification || item.cod || item.number || 'S/N';
+            const deterministicId = `Z-${invoiceNumber}-${normalizedType}`;
+
             const invoice: InvoiceRecord = {
-                id: item.id || `Z-${Math.random()}`,
-                invoiceNumber: item.cod || 'S/N',
+                id: item.id ? item.id.toString() : deterministicId,
+                invoiceNumber: invoiceNumber,
                 type: normalizedType as any,
-                date: new Date(rawDate),
-                monthYear: format(new Date(rawDate), 'yyyy-MM'),
-                grossAmount: parseCurrency(item.tot),
-                netAmount: parseCurrency(item.tot),
+                date: normalizedDate,
+                monthYear: format(normalizedDate, 'yyyy-MM'),
+                grossAmount: finalTotal, // Total de la operación (Bolsillo Cliente + Aporte OS)
+                netAmount: finalTotal,
                 discount: 0,
-                seller: item.ven || 'BIO',
+                seller: finalSeller,
                 entity: entity,
-                insurance: entity !== 'Particular' ? entity : '-',
+                insurance: totalOS > 0 ? entity : '-',
                 paymentType: mainPay,
                 branch: item._branch || 'FCIA BIOSALUD',
-                client: item.cli || 'Particular'
+                client: finalClient,
+                cashAmount: totalCash,
+                cardAmount: totalCard,
+                osAmount: totalOS, // CAMPO CRÍTICO: Aquí viaja lo que paga PAMI/OS
+                ctacteAmount: totalCTACTE
             };
             invoices.push(invoice);
 
             (item.items || []).forEach((it: any) => {
-                // Capturamos el costo si Zetti lo manda (como costPrice o purchaseCost)
-                const unitCost = it.costPrice || it.purchaseCost || it.cost || 0;
+                // COSTOS Y PRECIOS
+                // costPrice en Zetti suele ser PVP (Precio de Lista).
+                // purchaseCost es el Costo de Reposición (si existe).
+                const listPrice = parseCurrency(it.costPrice || 0); // PVP
+                const netPrice = parseCurrency(it.unitPrice || it.pre || 0); // Precio Cobrado Real
 
-                const barcode = it.bar || '';
+                // Para margen (profit), necesitamos el costo de compra. Si no está, estimamos o usamos listPrice con descuento std.
+                // PRIORIDAD: purchaseCost > cost > 0
+                const unitCost = parseCurrency(it.purchaseCost || it.cost || 0);
+
+                const barcode = (it.product?.barCode || it.product?.barcode || it.bar || it.barcode || it.code || it.ean || '').toString().trim();
                 const masterInfo = masterMap.get(barcode);
-                const finalCategory = masterInfo?.category || it.cat || it.lab || 'Varios';
-                const finalManufacturer = masterInfo?.manufacturer || it.lab || 'Zetti';
+                const finalCategory = masterInfo?.category || it.category?.name || it.cat || it.rubro || it.lab || 'Varios';
+                const finalManufacturer = masterInfo?.manufacturer || it.manufacturer?.name || it.product?.manufacturer?.name || it.lab || it.fab || 'Zetti';
+                const pName = it.product?.name || it.nom || it.name || it.productName || it.product?.description || 'Producto';
+
+                let itemTotal = parseCurrency(it.sub || it.amount);
+                const qty = parseCurrency(it.can || it.quantity) || 1;
+
+                if (itemTotal === 0 && netPrice > 0) {
+                    itemTotal = netPrice * qty;
+                }
+
+                // Distribución proporcional si el ítem vino en 0 pero la factura tiene total (caso raro)
+                if (itemTotal === 0 && invoice.grossAmount > 0 && (item.items || []).length === 1) {
+                    itemTotal = invoice.grossAmount;
+                }
 
                 allSales.push({
                     id: `${invoice.id}-${it.id || Math.random()}`,
                     invoiceNumber: invoice.invoiceNumber,
-                    date: new Date(rawDate),
+                    date: normalizedDate,
                     monthYear: invoice.monthYear,
-                    productName: it.nom || 'Producto',
-                    quantity: parseCurrency(it.can) || 1,
-                    unitPrice: parseCurrency(it.pre),
-                    totalAmount: parseCurrency(it.sub),
+                    productName: pName,
+                    quantity: qty,
+                    unitPrice: netPrice > 0 ? netPrice : (itemTotal / qty),
+                    totalAmount: itemTotal,
                     category: finalCategory,
                     branch: invoice.branch,
                     sellerName: invoice.seller,
@@ -494,24 +654,19 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
                     paymentMethod: invoice.paymentType,
                     barcode: barcode,
                     manufacturer: finalManufacturer,
-                    unitCost: parseCurrency(unitCost),
-                    hour: new Date(rawDate).getHours()
+                    unitCost: unitCost,
+                    hour: normalizedDate.getHours()
                 });
             });
         });
 
-        // --- GASTOS (PROVIDER RECEIPTS) ---
-        // --- GASTOS Y SERVICIOS (PROVIDER RECEIPTS) ---
+        // --- GASTOS & SERVICIOS ---
         const mappedExpenses: ExpenseRecord[] = [];
         const mappedServices: ExpenseRecord[] = [];
-
-        // Recuperar categorías de servicios para separación automática
         const serviceCategories = await getMetadata('service_categories') || {};
-        console.log(`[SYNC] Categorías de servicios detectadas: ${Object.keys(serviceCategories).length}`);
 
         raw.expenses.forEach(r => {
-            const amountStr = r.mainAmount || r.totalAmount || r.amount || '0';
-            const amount = parseCurrency(amountStr);
+            const amount = parseCurrency(r.mainAmount || r.totalAmount || r.amount || '0');
             const supplierName = r.supplier?.name || r.provider?.name || (typeof r.supplier === 'string' ? r.supplier : 'Proveedor');
             const isService = !!serviceCategories[supplierName];
 
@@ -524,72 +679,73 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
                 branch: r._branch || 'General',
                 monthYear: format(new Date(r.emissionDate || new Date()), 'yyyy-MM'),
                 code: r.number || r.codification || '-',
-                type: r.valueType?.name || (typeof r.valueType === 'string' ? r.valueType : 'Factura'),
-                status: r.status?.name || (typeof r.status === 'string' ? r.status : 'Pagado'),
+                type: r.valueType?.name || 'Factura',
+                status: r.status?.name || 'Pagado',
                 operationType: isService ? 'Servicio Zetti' : 'Gasto Zetti',
                 items: []
             };
-
-            if (isService) {
-                mappedServices.push(record);
-            } else {
-                mappedExpenses.push(record);
-            }
+            if (isService) mappedServices.push(record);
+            else mappedExpenses.push(record);
         });
 
-        // --- SEGUROS (INSURANCE RECEIPTS) ---
+        // --- OBRAS SOCIALES (SEGUROS) ---
         const mappedInsurance: InsuranceRecord[] = [];
+        // 1. Recetas explícitas
         raw.insurance.forEach(r => {
-            // Priority: Operation amount -> mainAmount -> amount
-            let amountStr = r.mainAmount || r.totalAmount || r.amount || '0';
+            const amount = parseCurrency(r.mainAmount || r.totalAmount || r.amount || 0);
+            const entityName = r.healthInsuranceProvider?.name || r.entity?.name || 'O.S.';
+            if (entityName.toUpperCase().includes('DEL SUD') || entityName.toUpperCase().includes('MONROE')) return;
 
-            // Check operations from deep enrichment
-            if (r.operations && r.operations.length > 0) {
-                const opOS = r.operations.find((op: any) =>
-                    op.operationType?.id === '10' || op.operationType?.description?.toUpperCase().includes('RECETA') ||
-                    op.operationType?.description?.toUpperCase().includes('PLAN')
-                );
-                if (opOS) amountStr = opOS.amount || opOS.mainAmount || amountStr;
-            }
-
-            const amount = parseCurrency(amountStr);
-            const entityName = r.healthInsuranceProvider?.name || r.entity?.name || (typeof r.entity === 'string' ? r.entity : 'O.S.');
-
-            // Si por error Zetti nos devuelve un proveedor de droguería aquí, lo ignoramos o movemos
-            // (Evitamos duplicidad de $72M)
-            if (entityName.toUpperCase().includes('DEL SUD') || entityName.toUpperCase().includes('MONROE') || entityName.toUpperCase().includes('COFARMEN')) {
-                console.warn(`[SYNC] Filtrando ${entityName} de Obras Sociales por ser Proveedor.`);
-                return;
-            }
-
-            const agreement = (r.agreements || []).find((a: any) => a.type === 'prescription' || a.t === 'prescription');
-            const patientAmount = agreement ? parseCurrency(agreement.clientAmount) : 0;
-            const affiliate = agreement ? (agreement.affiliateNumber || '-') : '-';
-            const plan = agreement ? (agreement.healthInsurancePlan?.shortName || agreement.healthInsurancePlan?.name || '-') : '-';
-
+            const agreement = (r.agreements || []).find((a: any) => a.type === 'prescription');
             mappedInsurance.push({
                 id: r.id?.toString() || Math.random().toString(),
                 entity: entityName,
                 amount: amount,
-                patientAmount: patientAmount,
-                totalVoucher: amount + patientAmount,
-                affiliate: affiliate,
-                plan: plan,
+                patientAmount: agreement ? parseCurrency(agreement.clientAmount) : 0,
+                totalVoucher: amount + (agreement ? parseCurrency(agreement.clientAmount) : 0),
+                affiliate: agreement?.affiliateNumber || agreement?.affiliateName || '-',
+                plan: agreement?.healthInsurancePlan?.name || '-',
                 issueDate: new Date(r.emissionDate || new Date()),
                 dueDate: new Date(r.dueDate || r.emissionDate || new Date()),
                 branch: r._branch || 'General',
                 monthYear: format(new Date(r.emissionDate || new Date()), 'yyyy-MM'),
                 code: r.number || r.codification || '-',
-                type: r.valueType?.name || (typeof r.valueType === 'string' ? r.valueType : 'Receta'),
-                status: r.status?.name || (typeof r.status === 'string' ? r.status : 'INGRESADO'),
-                operationType: 'Liquidación',
-                items: [],
-                rawAgreements: r.agreements || []
+                type: r.valueType?.name || 'Receta',
+                status: r.status?.name || 'INGRESADO',
+                operationType: 'Receta Zetti',
+                items: []
             });
         });
 
-        // --- CLIENTES (SALDOS / CTA CTE) ---
-        const mappedCurrentAccount: CurrentAccountRecord[] = raw.customers.filter((c: any) => (c.balance || 0) !== 0).map((c: any) => ({
+        // 2. Proyectar de ventas si no están mapeadas
+        invoices.forEach(inv => {
+            if (inv.osAmount > 0) {
+                const alreadyMapped = mappedInsurance.some(mi => mi.code === inv.invoiceNumber);
+                if (!alreadyMapped) {
+                    mappedInsurance.push({
+                        id: `INV-OS-${inv.id}`,
+                        entity: inv.entity,
+                        amount: inv.osAmount,
+                        patientAmount: inv.cashAmount + inv.cardAmount,
+                        totalVoucher: inv.grossAmount,
+                        affiliate: '-',
+                        plan: '-',
+                        issueDate: inv.date,
+                        dueDate: inv.date,
+                        branch: inv.branch,
+                        monthYear: inv.monthYear,
+                        code: inv.invoiceNumber,
+                        type: 'Venta con OS',
+                        status: 'DETECTADO',
+                        operationType: 'Receta Proyectada',
+                        items: []
+                    });
+                }
+            }
+        });
+
+        // --- CLIENTES (CTA CTE) ---
+        const mappedCurrentAccount = raw.customers.filter((c: any) => (c.balance || 0) !== 0).map((c: any) => ({
             id: c.id?.toString() || Math.random().toString(),
             entity: c.fullName || c.razonSocial || 'Cliente Desconocido',
             date: new Date(),
@@ -602,9 +758,7 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
             branch: c._branch || 'General'
         }));
 
-        // PERSIST ALL - With cross-file cleanup for Expenses/Services
-        addLog('Iniciando persistencia y limpieza de duplicados...', 'info');
-
+        addLog('Iniciando persistencia en la nube...', 'info');
         await Promise.all([
             saveSalesToDB(allSales),
             saveInvoicesToDB(invoices),
@@ -614,8 +768,14 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
             saveCurrentAccountsToDB(mappedCurrentAccount)
         ]);
 
-        // Trigger background product enrichment if needed
-        handleEnrichProcess().catch(err => console.error("Auto-enrichment failed:", err));
+        addLog('✅ Sincronización guardada exitosamente.', 'success');
+
+        (window as any)._lastSyncLog = {
+            date: new Date().toISOString(),
+            stats: { invoices: invoices.length, sales: allSales.length, expenses: mappedExpenses.length, insurance: mappedInsurance.length },
+            rawSalesSample: raw.sales.slice(0, 2),
+            mappedSalesSample: allSales.slice(0, 2)
+        };
 
         onDataImported({
             invoices,
@@ -625,110 +785,86 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
             services: mappedServices,
             currentAccounts: mappedCurrentAccount
         });
-
-        // --- 6. AUTO-ENRICHMENT --- DESHABILITADO
-        // addLog('Iniciando Enriquecimiento de Datos en segundo plano...', 'info');
-        // handleEnrichProcess()
-        //     .then(() => addLog('Enriquecimiento completado', 'success'))
-        //     .catch(err => addLog(`Error en enriquecimiento: ${err.message}`, 'error'));
     };
 
-    const handleEnrichProcess = async () => {
+    const handleSyncMasterFromFirestore = async () => {
+        setIsSyncing(true);
+        addLog('📥 Iniciando descarga del Maestro de Productos desde Firestore...', 'info');
         try {
             const { db } = await import('../src/firebaseConfig');
-            const { collection, doc, setDoc, onSnapshot } = await import('firebase/firestore');
+            const { collection, getDocs } = await import('firebase/firestore');
 
-            const requestId = `enrich_${Date.now()}`;
-            const requestRef = doc(db, 'zetti_enrich_requests', requestId);
-            const responseRef = doc(db, 'zetti_enrich_responses', requestId);
+            const querySnapshot = await getDocs(collection(db, 'zetti_products_master'));
+            const master = querySnapshot.docs.map(doc => doc.data());
 
-            // Crear la solicitud (esto dispara la Cloud Function)
-            await setDoc(requestRef, {
-                timestamp: new Date(),
-                status: 'pending'
-            });
-
-            addLog('⚡ Solicitud de enriquecimiento enviada...', 'info');
-
-            // Escuchar la respuesta
-            return new Promise((resolve, reject) => {
-                const timeout = setTimeout(() => {
-                    unsubscribe();
-                    reject(new Error('Timeout esperando respuesta'));
-                }, 120000); // 2 minutos
-
-                const unsubscribe = onSnapshot(responseRef, async (snapshot) => {
-                    if (snapshot.exists()) {
-                        clearTimeout(timeout);
-                        unsubscribe();
-
-                        const data = snapshot.data();
-
-                        // Limpiar documentos
-                        try {
-                            const { deleteDoc } = await import('firebase/firestore');
-                            await deleteDoc(requestRef);
-                            await deleteDoc(responseRef);
-                        } catch (cleanupError) {
-                            console.warn('Error limpiando documentos:', cleanupError);
-                        }
-
-                        if (data.error) {
-                            reject(new Error(data.error));
-                        } else {
-                            const msg = data.message || 'Proceso finalizado';
-                            const count = data.count || 0;
-
-                            if (count > 0) {
-                                addLog(`⚡ ${msg}`, 'success');
-                            } else {
-                                addLog(`⚡ ${msg}`, 'info');
-                            }
-                            resolve(data);
-                        }
-                    }
-                });
-            });
+            await saveProductMasterToDB(master);
+            addLog(`✅ Maestro actualizado: ${master.length} productos descargados y guardados localmente.`, 'success');
         } catch (e: any) {
-            console.error("Enrichment failed:", e);
-            throw e;
+            addLog(`❌ Error al sincronizar maestro: ${e.message}`, 'error');
+            console.error(e);
+        } finally {
+            setIsSyncing(false);
         }
     };
 
     const handleRepair = async () => {
+        setIsSyncing(true);
+        addLog("Iniciando reparación LOCAL de rubros/fabricantes...", "info");
         try {
-            addLog("Iniciando reparación de rubros/fabricantes via Túnel Firestore...", "info");
-            const { collection, addDoc, doc, onSnapshot } = await import('firebase/firestore');
-            const { db } = await import('../src/firebaseConfig');
+            const { getAllSalesFromDB, saveSalesToDB, getAllProductMasterFromDB } = await import('../utils/db');
 
-            // 1. Crear solicitud en coleccion requests
-            const reqRef = await addDoc(collection(db, 'zetti_repair_requests'), {
-                timestamp: new Date(),
-                requestedBy: 'dashboard'
+            // 1. Cargamos datos locales
+            const [allSales, productMaster] = await Promise.all([
+                getAllSalesFromDB(),
+                getAllProductMasterFromDB()
+            ]);
+
+            // 2. Mapeamos el maestro para búsqueda rápida por barcode
+            const masterMap = new Map();
+            productMaster.forEach(p => {
+                if (p.barcode) masterMap.set(p.barcode, p);
             });
 
-            // 2. Escuchar respuesta en coleccion responses
-            addLog(`Solicitud ID: ${reqRef.id}`, "info");
-            const unsub = onSnapshot(doc(db, 'zetti_repair_responses', reqRef.id), (docSnap) => {
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
-                    if (data.error) {
-                        addLog(`Error en reparación: ${data.error}`, "error");
-                        alert(`Error: ${data.error}`);
-                    } else {
-                        addLog(`✅ Reparación completada: ${data.updatedTotal} registros actualizados.`, "success");
-                        alert("✅ Reparación completada. Recargue el Dashboard para ver los cambios.");
+            // 3. Lógica de reparación: Iteramos sobre todas las ventas
+            let updatedCount = 0;
+            const repairedSales = allSales.map(sale => {
+                const masterInfo = masterMap.get(sale.barcode);
+                if (masterInfo) {
+                    let changed = false;
+                    // Reparamos categoría si es 'Varios', nula o vacía
+                    if (sale.category === 'Varios' || !sale.category || sale.category.trim() === '') {
+                        if (masterInfo.category && masterInfo.category !== 'Varios') {
+                            sale.category = masterInfo.category;
+                            changed = true;
+                        }
                     }
-                    unsub();
+                    // Reparamos fabricante si es 'Zetti', nulo o vacío
+                    if (sale.manufacturer === 'Zetti' || !sale.manufacturer || sale.manufacturer.trim() === '') {
+                        if (masterInfo.manufacturer && masterInfo.manufacturer !== 'Zetti') {
+                            sale.manufacturer = masterInfo.manufacturer;
+                            changed = true;
+                        }
+                    }
+                    if (changed) updatedCount++;
                 }
+                return sale;
             });
 
-            // Timeout de seguridad para la UI
-            setTimeout(() => { unsub(); }, 30000);
+            // 4. Guardamos los cambios de vuelta en el almacenamiento JSON
+            if (updatedCount > 0) {
+                await saveSalesToDB(repairedSales);
+                addLog(`✅ Reparación completada: ${updatedCount} ventas actualizadas con datos del Maestro.`, "success");
+                alert(`✅ Reparación completada: ${updatedCount} registros actualizados localmente.`);
+            } else {
+                addLog("No se encontraron registros para reparar con el Maestro actual.", "info");
+                alert("No se encontraron registros que necesiten reparación.");
+            }
 
         } catch (e: any) {
             addLog(`Error al iniciar reparación: ${e.message}`, "error");
             alert(`Error: ${e.message}`);
+        } finally {
+            setIsSyncing(false);
         }
     };
 
@@ -841,72 +977,99 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
             setIsUploadingMaster(false);
         }
     };
-
     const handleImport = () => {
         if (results.length === 0) return;
 
-        const invoices: InvoiceRecord[] = [];
+        // ⚠️ CRITICAL: Use Map to prevent duplicates WITHIN same sync batch
+        const invoiceMap = new Map<string, InvoiceRecord>();
         const allSales: SaleRecord[] = [];
 
         results.forEach(item => {
-            const rawDate = item.fec || new Date().toISOString();
-            const payments = item.pagos || [];
+            const rawDate = item.fec || item.emissionDate || new Date().toISOString();
+            const uniqueId = item.id ? item.id.toString() : `Z-${item.cod || 'SN'}-${format(new Date(rawDate), 'yyyyMMddHHmm')}`;
 
-            const agreement = payments.find((p: any) => p.t === 'agreement' || p.t === 'prescription');
-            const card = payments.find((p: any) => p.t === 'card' || p.t === 'cardInstallment');
-            const checking = payments.find((p: any) => p.t === 'checkingAccount');
+            // REGLA 5: Deduplicación (Prevenir duplicados de tarjeta/Zetti)
+            if (invoiceMap.has(uniqueId)) return;
 
-            let mainPay = 'Efectivo';
-            if (agreement) mainPay = 'Obra Social';
-            else if (card) mainPay = card.n || 'Tarjeta';
-            else if (checking) mainPay = 'Cuenta Corriente';
-            else if (payments[0]) mainPay = payments[0].n;
+            // ANALISIS DE COMPROBANTE (Reglas 3 y 4)
+            let type = 'FV';
+            const tco = (item.tco || 'FV').toUpperCase();
+            const pays = item.agreements || item.pagos || [];
+            const check = pays.find((p: any) => p.type === 'checking' || p.t === 'checkingAccount' || p.valueType?.name === 'CTACTE');
 
-            const entity = agreement?.n || 'Particular';
+            // Detección de Transferencia Interna (TX)
+            const isTX = (item.customer?.name || item.cli || '').toUpperCase().includes('BIOSALUD') || tco.includes('TX');
+
+            if (tco.includes('NC')) type = 'NC';
+            else if (isTX) type = 'TX';
+            else if (tco.includes('ND')) type = 'ND';
+
+            // REGLA 1: Filtro de productos reales (Independiente de lo que diga Zetti)
+            const seenItems = new Set<string>();
+            const zTotal = Number(item.tot) || 0;
+            const products = (item.items || []).filter((it: any) => {
+                const isReal = it.product && it.product.id && (it.product.name || it.product.description);
+                if (!isReal) return false;
+
+                // Ignorar líneas de resumen/técnicas (Regla 1)
+                const isSummary = Number(it.amount) === zTotal && item.items.length > 1;
+                if (isSummary && (it.product?.name || '').toUpperCase().includes('TOTAL')) return false;
+
+                const itemId = it.id?.toString() || `${it.product.id}-${it.amount}`;
+                if (seenItems.has(itemId)) return false;
+                seenItems.add(itemId);
+                return true;
+            });
+
+            // REGLA 2: Fuente Única - El total ES la suma de productos
+            const calculatedSum = products.reduce((s, i) => s + (Number(i.amount) || 0), 0);
 
             const invoice: InvoiceRecord = {
-                id: item.id || `Z-${Math.random()}`,
+                id: uniqueId,
                 invoiceNumber: item.cod || 'S/N',
-                type: (item.tco || 'FV').includes('NC') ? 'NC' : 'FV',
+                type: type as 'FV' | 'NC' | 'TX',
                 date: new Date(rawDate),
                 monthYear: format(new Date(rawDate), 'yyyy-MM'),
-                grossAmount: item.tot || 0,
-                netAmount: item.tot || 0,
+                grossAmount: calculatedSum,
+                netAmount: calculatedSum,
                 discount: 0,
-                seller: item.ven || 'BIO',
-                entity: entity,
-                insurance: entity !== 'Particular' ? entity : '-',
-                paymentType: mainPay,
+                seller: item.creationUser?.alias || 'BIO',
+                entity: item.agreement?.n || item.entity || 'Particular',
+                insurance: (item.agreement?.n || item.entity || 'Particular') !== 'Particular' ? (item.agreement?.n || item.entity) : '-',
+                paymentType: check ? 'Cuenta Corriente' : (pays[0]?.n || 'Efectivo'),
                 branch: item._branch || 'FCIA BIOSALUD',
                 client: item.cli || 'Particular'
             };
-            invoices.push(invoice);
+            invoiceMap.set(uniqueId, invoice);
 
-            (item.items || []).forEach((it: any) => {
+            // REGLA 0: Registro de Ventas Unificado
+            products.forEach((it: any, idx) => {
+                const sId = `${invoice.id}-${it.id || idx}`;
                 allSales.push({
-                    id: `${invoice.id}-${it.id || Math.random()}`,
+                    id: sId,
                     invoiceNumber: invoice.invoiceNumber,
-                    date: new Date(rawDate),
+                    date: invoice.date,
                     monthYear: invoice.monthYear,
-                    productName: it.nom || 'Producto',
-                    quantity: it.can || 1,
-                    unitPrice: it.pre || 0,
-                    totalAmount: it.sub || 0,
-                    category: it.cat || it.lab || 'Varios',
+                    productName: it.product?.name || 'Producto',
+                    quantity: Number(it.quantity || it.can || 1),
+                    unitPrice: Number(it.unitPrice || it.pre || 0),
+                    totalAmount: Number(it.amount) || 0,
+                    category: it.category?.name || it.rubro?.name || 'Varios',
                     branch: invoice.branch,
                     sellerName: invoice.seller,
                     entity: invoice.entity,
                     paymentMethod: invoice.paymentType,
-                    barcode: it.bar || '',
-                    hour: new Date(rawDate).getHours(),
-                    manufacturer: it.lab || 'Zetti'
+                    barcode: (it.product?.barCode || it.product?.barcode || '').toString().trim(),
+                    hour: invoice.date.getHours(),
+                    manufacturer: it.manufacturer?.name || 'Zetti'
                 });
             });
         });
 
+        const invoices = Array.from(invoiceMap.values());
         onDataImported({ invoices, sales: allSales });
-        addLog(`Importación manual: ${invoices.length} facturas vinculadas`, 'success');
-        alert(`✅ ${invoices.length} Comprobantes y ${allSales.length} ítems de venta cargados al panel.`);
+        addLog(`✅ Importación bajo REGLAS DE ORO: ${invoices.length} Facturas, ${allSales.length} Ventas.`, 'success');
+        alert(`Sincronización completa: Los datos se han reconstruido siguiendo la FUENTE ÚNICA de productos.`);
     };
 
     // --- FILTER LOGIC ---
@@ -939,6 +1102,102 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
         }));
         return Array.from(set).filter(Boolean).sort();
     }, [results, viewTab]);
+
+    // --- DIAGNÓSTICO DE RUBROS ---
+
+
+    // --- DIAGNÓSTICO DE RUBROS ---
+    const analyzeRubros = async () => {
+        try {
+            addLog('🔍 Iniciando diagnóstico profundo de rubros...', 'info');
+
+            // 1. Cargar Maestro
+            const master = await getAllProductMasterFromDB();
+            const masterMap = new Map<string, any>();
+
+            // Indexar maestro con normalización agresiva
+            master.forEach((p: any) => {
+                const bOriginal = (p.barcode || p.barCode || '').toString().trim();
+                const bNormal = bOriginal.replace(/^0+/, ''); // Quitamos ceros a la izquierda
+
+                if (bOriginal) masterMap.set(bOriginal, p);
+                if (bNormal !== bOriginal) masterMap.set(bNormal, p);
+            });
+
+            // 2. Analizar Ventas (último lote en memoria syncResults.sales o cargar de DB)
+            // Si syncResults.sales no está disponible, cargamos de BD
+            let targetSales = (window as any)._lastSyncSales || [];
+
+            if (targetSales.length === 0) {
+                addLog('⚠️ No hay ventas en memoria, cargando histórico completo de ventas...', 'warn');
+                targetSales = await getAllSalesFromDB();
+            }
+
+            if (targetSales.length === 0) {
+                alert('No se encontraron ventas para analizar.');
+                return;
+            }
+
+            const analysisReport: any[] = [];
+
+            targetSales.forEach((sale: any) => {
+                const bOriginal = (sale.barcode || '').toString().trim();
+                const bNormal = bOriginal.replace(/^0+/, '');
+
+                let matchType = 'NONE';
+                let dbP = masterMap.get(bOriginal);
+
+                if (dbP) {
+                    matchType = 'EXACT_MATCH';
+                } else {
+                    dbP = masterMap.get(bNormal);
+                    if (dbP) matchType = 'NORMALIZED_MATCH';
+                }
+
+                analysisReport.push({
+                    facturaBarcodeOriginal: bOriginal,
+                    facturaBarcodeNormalizado: bNormal,
+                    dbBarcodeOriginal: dbP ? (dbP.barcode || dbP.barCode) : null,
+                    dbBarcodeNormalizado: dbP ? (dbP.barcode || dbP.barCode || '').toString().replace(/^0+/, '') : null,
+                    facturaName: sale.productName,
+                    dbNameNormalizado: dbP ? (dbP.description || dbP.name) : 'NOT_FOUND',
+                    matchReason: matchType,
+                    categoryAssigned: sale.category,
+                    dbCategory: dbP ? (dbP.rubro || dbP.category) : null,
+                    date: sale.date
+                });
+            });
+
+            // 3. Descargar JSON
+            const dataStr = JSON.stringify(analysisReport, null, 2);
+            const blob = new Blob([dataStr], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = `diagnostico_rubros_${format(new Date(), 'yyyyMMdd_HHmm')}.json`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            addLog(`✅ Diagnóstico completado. Reporte descargado (${analysisReport.length} items).`, 'success');
+
+        } catch (e: any) {
+            console.error(e);
+            addLog('❌ Error en diagnóstico: ' + e.message, 'error');
+        }
+    };
+
+    // --- DOWNLOAD LOGS Helper ---
+    const downloadLogs = () => {
+        const logText = logs.map(l => `[${l.type.toUpperCase()}] ${l.msg}`).join('\n');
+        const blob = new Blob([logText], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `zetti_sync_logs_${new Date().toISOString().split('.')[0].replace(/:/g, '-')}.txt`;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
 
     return (
         <div className="space-y-6">
@@ -993,57 +1252,114 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
                         ))}
                     </div>
 
-                    <div className="flex flex-col md:flex-row gap-4">
-                        <button
-                            onClick={handleSync}
-                            disabled={isSyncing}
-                            className={`flex-1 py-4 px-8 rounded-2xl bg-indigo-600 text-white font-black text-sm tracking-tight hover:bg-indigo-500 transition-all flex items-center justify-center gap-3 shadow-xl shadow-indigo-600/20 disabled:opacity-50 disabled:cursor-not-allowed group h-[60px]`}
-                        >
-                            {isSyncing ? (
-                                <RefreshCw className="w-5 h-5 animate-spin" />
-                            ) : (
-                                <CloudLightning className="w-5 h-5 group-hover:scale-125 transition-transform" />
-                            )}
-                            {isSyncing ? 'SINCRONIZANDO REPORTE UNIVERSAL...' : 'INICIAR SINCRONIZACIÓN COMPLETA'}
-                        </button>
+                    <div className="flex flex-col gap-6">
+                        {/* BOTÓN PRINCIPAL: Única acción necesaria para el día a día */}
+                        <div className="flex flex-col gap-2">
+                            <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest ml-1">Proceso Diario</span>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={handleSync}
+                                    disabled={isSyncing}
+                                    className={`flex-1 py-6 px-8 rounded-3xl bg-indigo-600 text-white font-black text-lg tracking-tight hover:bg-indigo-500 transition-all flex items-center justify-center gap-4 shadow-2xl shadow-indigo-600/40 disabled:opacity-50 disabled:cursor-not-allowed group h-[80px]`}
+                                >
+                                    {isSyncing ? (
+                                        <RefreshCw className="w-6 h-6 animate-spin" />
+                                    ) : (
+                                        <CloudLightning className="w-6 h-6 group-hover:scale-125 transition-transform text-indigo-200" />
+                                    )}
+                                    {isSyncing ? 'SINCRONIZANDO...' : 'INICIAR SINCRONIZACIÓN TOTAL'}
+                                </button>
 
-                        <button
-                            onClick={handleExploreOS}
-                            disabled={isExploringOS || isSyncing}
-                            className={`flex-1 py-4 rounded-2xl font-black text-xs transition-all flex items-center justify-center gap-3 ${isExploringOS ? 'bg-slate-800 text-slate-500' : 'bg-indigo-900 border border-indigo-700 text-indigo-100 hover:bg-indigo-800 shadow-xl'}`}
-                        >
-                            <HeartPulse className={`w-4 h-4 ${isExploringOS ? 'animate-pulse' : ''}`} />
-                            {isExploringOS ? 'EXPLORANDO...' : ' EXPLORAR COBERTURAS OS'}
-                        </button>
+                                {(window as any)._lastSyncLog && (
+                                    <button
+                                        onClick={() => {
+                                            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify((window as any)._lastSyncLog, null, 2));
+                                            const dl = document.createElement('a');
+                                            dl.setAttribute("href", dataStr);
+                                            dl.setAttribute("download", `sync_debug_${new Date().toISOString()}.json`);
+                                            dl.click();
+                                        }}
+                                        className="px-6 rounded-3xl bg-slate-800 text-slate-400 hover:text-white transition-all flex items-center justify-center"
+                                        title="Bajar diagnóstico de última sincronización"
+                                    >
+                                        <HardDrive className="w-6 h-6" />
+                                    </button>
+                                )}
+                            </div>
 
-                        <button
-                            onClick={() => handleEnrichProcess().then(() => alert("Enriquecimiento lanzado.")).catch(e => alert(e.message))}
-                            disabled={isSyncing}
-                            className={`w-full md:w-auto py-4 px-8 rounded-2xl bg-emerald-100 text-emerald-700 font-black text-sm tracking-tight hover:bg-emerald-200 transition-all flex items-center justify-center gap-3 shadow-xl shadow-emerald-600/10 disabled:opacity-50 disabled:cursor-not-allowed group h-[60px] whitespace-nowrap`}
-                            title="Forzar búsqueda de datos faltantes en productos"
-                        >
-                            <ShieldCheck className="w-5 h-5 group-hover:scale-110 transition-transform" />
-                            ENRIQUECER
-                        </button>
+                            <div className="flex items-center gap-2 mt-4 md:mt-0">
+                                <button
+                                    onClick={analyzeRubros}
+                                    className="px-4 py-2 bg-yellow-400/10 text-yellow-600 border border-yellow-200 hover:bg-yellow-100 rounded-lg text-xs font-bold transition-colors flex items-center gap-2"
+                                    title="Analizar coincidencias de códigos de barra"
+                                >
+                                    🔍 Diagnóstico Rubros
+                                </button>
+                                <button
+                                    onClick={downloadLogs}
+                                    className="px-4 py-2 bg-slate-100 text-slate-600 border border-slate-200 hover:bg-slate-200 rounded-lg text-xs font-bold transition-colors flex items-center gap-2"
+                                >
+                                    <Download className="w-3 h-3" />
+                                    Log
+                                </button>
+                            </div>
+                            <p className="text-slate-500 text-[10px] italic ml-1 mt-2 w-full text-center md:text-left">
+                                * Este proceso actualiza automáticamente el Maestro de Productos, Ventas, Gastos, Obras Sociales y Cuentas Corrientes.
+                            </p>
+                        </div>
 
-                        <button
-                            onClick={handleRepair}
-                            disabled={isSyncing}
-                            className={`w-full md:w-auto py-4 px-8 rounded-2xl bg-orange-100 text-orange-700 font-black text-sm tracking-tight hover:bg-orange-200 transition-all flex items-center justify-center gap-3 shadow-xl shadow-orange-600/10 disabled:opacity-50 disabled:cursor-not-allowed group h-[60px] whitespace-nowrap`}
-                            title="Actualizar las categorías de ventas pasadas usando el maestro de productos"
-                        >
-                            <RefreshCw className="w-5 h-5 group-hover:rotate-180 transition-transform" />
-                            REPARAR RUBROS
-                        </button>
+                        {/* ACCIONES DE MANTENIMIENTO: Menos frecuentes */}
+                        <div className="pt-6 border-t border-slate-800">
+                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1 mb-3 block">Acciones de Mantenimiento</span>
+                            <div className="flex flex-wrap gap-4">
+                                <button
+                                    onClick={handleExploreOS}
+                                    disabled={isExploringOS || isSyncing}
+                                    className={`flex-1 min-w-[200px] py-4 rounded-2xl font-black text-xs transition-all flex items-center justify-center gap-3 ${isExploringOS ? 'bg-slate-800 text-slate-500' : 'bg-slate-800 border border-slate-700 text-indigo-300 hover:bg-slate-750 shadow-xl'}`}
+                                    title="Busca detalles profundos de coberturas en Recetas"
+                                >
+                                    <HeartPulse className={`w-4 h-4 ${isExploringOS ? 'animate-pulse' : ''}`} />
+                                    {isExploringOS ? 'EXPLORANDO...' : 'DETALLE PROFUNDO OS'}
+                                </button>
+
+                                <button
+                                    onClick={handleRepair}
+                                    disabled={isSyncing}
+                                    className={`flex-1 min-w-[200px] py-4 px-8 rounded-2xl bg-slate-800 border border-slate-700 text-orange-400 font-black text-xs tracking-tight hover:bg-slate-750 transition-all flex items-center justify-center gap-3 shadow-xl disabled:opacity-50 disabled:cursor-not-allowed group`}
+                                    title="Revisa ventas pasadas y les asigna categorías basadas en el Maestro actual"
+                                >
+                                    <RefreshCw className="w-4 h-4 group-hover:rotate-180 transition-transform" />
+                                    CORREGIR CATEGORÍAS (HISTÓRICO)
+                                </button>
+                            </div>
+                        </div>
                     </div>
 
 
                     {/* MINI CONSOLA DE LOGS */}
                     {(isSyncing || logs.length > 0) && (
                         <div className="mt-8 bg-black/40 rounded-2xl border border-white/5 p-4 font-mono text-[10px] overflow-hidden">
-                            <div className="flex items-center gap-2 mb-2 border-b border-white/5 pb-2 text-slate-500 uppercase font-black">
-                                <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
-                                Console.log_output
+                            <div className="flex items-center justify-between mb-2 border-b border-white/5 pb-2">
+                                <div className="flex items-center gap-2 text-slate-500 uppercase font-black">
+                                    <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
+                                    Console.log_output
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        const logText = logs.map(l => `[${l.type.toUpperCase()}] ${l.msg}`).join('\n');
+                                        const blob = new Blob([logText], { type: 'text/plain' });
+                                        const url = URL.createObjectURL(blob);
+                                        const a = document.createElement('a');
+                                        a.href = url;
+                                        a.download = `zetti_sync_logs_${new Date().toISOString().split('.')[0].replace(/:/g, '-')}.txt`;
+                                        a.click();
+                                        URL.revokeObjectURL(url);
+                                    }}
+                                    className="text-indigo-400 hover:text-indigo-300 font-black flex items-center gap-1 uppercase"
+                                >
+                                    <Download className="w-3 h-3" />
+                                    Exportar Logs
+                                </button>
                             </div>
                             <div className="max-h-[120px] overflow-y-auto space-y-1 scrollbar-hide flex flex-col-reverse">
                                 {[...logs].reverse().map((log, i) => (

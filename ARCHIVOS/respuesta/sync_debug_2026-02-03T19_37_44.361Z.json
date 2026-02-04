@@ -1,0 +1,72 @@
+{
+  "date": "2026-02-03T19:36:11.816Z",
+  "stats": {
+    "invoices": 172,
+    "sales": 382,
+    "expenses": 26,
+    "insurance": 0
+  },
+  "sample": [
+    {
+      "pagos": [
+        "BILLE:undefined",
+        "CONV:undefined",
+        "TARJ:undefined",
+        "BILLE:undefined",
+        "CONV:undefined",
+        "TARJ:undefined"
+      ],
+      "items": [
+        "undefined:undefined"
+      ]
+    },
+    {
+      "pagos": [
+        "BILLE:undefined",
+        "BILLE:undefined"
+      ],
+      "items": [
+        "undefined:undefined"
+      ]
+    },
+    {
+      "pagos": [
+        "BILLE:undefined",
+        "TARJ:undefined",
+        "BILLE:undefined",
+        "TARJ:undefined"
+      ],
+      "items": [
+        "undefined:undefined",
+        "undefined:undefined"
+      ]
+    },
+    {
+      "pagos": [
+        "BILLE:undefined",
+        "TARJ:undefined",
+        "CONV:undefined",
+        "BILLE:undefined",
+        "TARJ:undefined",
+        "CONV:undefined"
+      ],
+      "items": [
+        "undefined:undefined"
+      ]
+    },
+    {
+      "pagos": [
+        "BILLE:undefined",
+        "RECE:undefined",
+        "TARJ:undefined",
+        "BILLE:undefined",
+        "RECE:undefined",
+        "TARJ:undefined"
+      ],
+      "items": [
+        "undefined:undefined",
+        "undefined:undefined"
+      ]
+    }
+  ]
+}

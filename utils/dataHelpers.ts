@@ -199,62 +199,86 @@ export const processSalesData = (data: RawCsvRow[], existingData: SaleRecord[] =
 };
 
 // --- INVOICE PROCESSING (UPSERT LOGIC) ---
-export const processInvoiceData = (data: RawInvoiceRow[], existingData: InvoiceRecord[] = []): InvoiceRecord[] => {
+export const processInvoiceData = (data: any[], existingData: InvoiceRecord[] = []): InvoiceRecord[] => {
+  // Use Invoice Number as the key for strict deduplication
   const invoiceMap = new Map<string, InvoiceRecord>();
-  existingData.forEach(d => invoiceMap.set(d.id, d));
+
+  // Helper to normalize Invoice Number for the Map Key
+  const getMapKey = (nro: string) => normalizeInvoiceNumber(nro);
+
+  existingData.forEach(d => {
+    const key = getMapKey(d.invoiceNumber);
+    if (key) invoiceMap.set(key, d);
+  });
 
   data.forEach((row, index) => {
-    const dateStr = getValue(row, "Fecha y Hora", "Fecha");
+    // Determine if it's a persisted record (has camelCase props) or Raw CSV
+    const isPersisted = row.netAmount !== undefined || row.grossAmount !== undefined;
+
+    const dateStr = getValue(row, "Fecha y Hora", "Fecha", "date");
     const timeStr = getValue(row, "Hora", "Time", "Hs", "Hora Comprobante");
-    const typeStr = getValue(row, "Tipo Cmp.", "Tipo", "Comprobante");
-    const nroStr = getValue(row, "Nro de Comprobante", "Nro", "Numero");
-    const branchStr = getValue(row, "Nodo", "Sucursal");
-    const sellerStr = getValue(row, "Vendedor", "Usuario");
-    const clientStr = getValue(row, "Cliente", "Razon Social");
-    const insuranceStr = getValue(row, "Obra Social", "O.S.");
-    const paymentStr = getValue(row, "Tarjeta", "Medio Pago", "Pago");
-    const netStr = getValue(row, "Imp. Neto", "Neto", "Subtotal");
-    const grossStr = getValue(row, "Imp. Bruto", "Bruto", "Total");
-    const discountStr = getValue(row, "Imp. Dto/Rec", "Descuento", "Dto");
-    const canceledStr = getValue(row, "Anulado");
+    const typeStr = getValue(row, "Tipo Cmp.", "Tipo", "Comprobante", "type");
+    const nroStr = getValue(row, "Nro de Comprobante", "Nro", "Numero", "invoiceNumber");
 
-    if (!dateStr) return;
-    if (canceledStr && (canceledStr.toLowerCase() === 'si' || canceledStr.toLowerCase() === 'x')) return;
+    // Skip invalid rows
+    if (!dateStr && !isPersisted) return;
 
-    const date = parseDate(dateStr, timeStr);
+    // Normalization
+    const date = isPersisted && row.date ? new Date(row.date) : (parseDate(dateStr, timeStr));
     if (!date) return;
 
-    const netAmount = parseCurrency(netStr);
-    const grossAmount = parseCurrency(grossStr);
-    const discountAmount = parseCurrency(discountStr);
+    const branchStr = getValue(row, "Nodo", "Sucursal", "branch");
+    const sellerStr = getValue(row, "Vendedor", "Usuario", "seller");
+    const clientStr = getValue(row, "Cliente", "Razon Social", "client");
+    const insuranceStr = getValue(row, "Obra Social", "O.S.", "insurance");
+    const paymentStr = getValue(row, "Tarjeta", "Medio Pago", "Pago", "paymentType");
 
-    const uniqueId = generateCompositeID(typeStr, nroStr) + (nroStr ? '' : `-${index}`);
+    const canceledStr = getValue(row, "Anulado");
+    if (canceledStr && (canceledStr.toLowerCase() === 'si' || canceledStr.toLowerCase() === 'x')) return;
 
-    let derivedEntity = clientStr?.trim() || "Particular";
-    if (derivedEntity.toUpperCase().includes("CONSUMIDOR FINAL")) {
-      derivedEntity = "Particular";
-    }
+    // Financials
+    const netAmount = isPersisted ? (row.netAmount || 0) : parseCurrency(getValue(row, "Imp. Neto", "Neto", "Subtotal"));
+    const grossAmount = isPersisted ? (row.grossAmount || 0) : parseCurrency(getValue(row, "Imp. Bruto", "Bruto", "Total"));
+    const discountAmount = isPersisted ? (row.discount || 0) : parseCurrency(getValue(row, "Imp. Dto/Rec", "Descuento", "Dto"));
 
-    // UPSERT Logic
-    invoiceMap.set(uniqueId, {
+    // Granular Payments (Key for Breakdown preservation)
+    const cashAmount = row.cashAmount ? Number(row.cashAmount) : 0;
+    const cardAmount = row.cardAmount ? Number(row.cardAmount) : 0;
+    const osAmount = row.osAmount ? Number(row.osAmount) : 0;
+    const ctacteAmount = row.ctacteAmount ? Number(row.ctacteAmount) : 0;
+
+    const derivedEntity = (clientStr?.trim() || "Particular").toUpperCase().includes("CONSUMIDOR FINAL") ? "Particular" : (clientStr?.trim() || "Particular");
+    const finalNro = nroStr || `GEN-${index}`;
+
+    // Generate a valid ID if missing (persisted usually has one)
+    const uniqueId = row.id || generateCompositeID(typeStr, finalNro);
+
+    // UPSERT Logic -> Key by Invoice Number to prevent Generic duplicates vs Real ones
+    const mapKey = getMapKey(finalNro);
+
+    invoiceMap.set(mapKey, {
       id: uniqueId,
       date: date,
       monthYear: format(date, "yyyy-MM"),
       branch: branchStr?.trim() || "General",
-      type: typeStr?.trim() || "Desconocido",
-      invoiceNumber: nroStr || `GEN-${index}`,
+      type: typeStr?.trim() || "FV",
+      invoiceNumber: finalNro,
       seller: sellerStr?.trim() || "Desconocido",
       client: clientStr?.trim() || "Consumidor Final",
       entity: derivedEntity,
       insurance: insuranceStr?.trim() || "-",
-      paymentType: paymentStr?.trim() || "Otros / Efectivo",
+      paymentType: paymentStr?.trim() || "Efectivo",
       netAmount: netAmount,
       grossAmount: grossAmount,
-      discount: discountAmount
+      discount: discountAmount,
+      cashAmount: cashAmount,
+      cardAmount: cardAmount,
+      osAmount: osAmount,
+      ctacteAmount: ctacteAmount
     });
   });
 
-  return Array.from(invoiceMap.values()).sort((a, b) => a.date.getTime() - b.date.getTime());
+  return Array.from(invoiceMap.values()).sort((a, b) => b.date.getTime() - a.date.getTime());
 };
 
 // --- TIME SYNC HELPERS ---
@@ -496,7 +520,11 @@ export const createUnifiedTransactions = (
       totalDiscount: inv.discount, // Changed from 0 to discount
       items: [],
       hasStockDetail: false,
-      hasFinancialDetail: true
+      hasFinancialDetail: true,
+      cashAmount: inv.cashAmount || 0,
+      cardAmount: inv.cardAmount || 0,
+      osAmount: inv.osAmount || 0,
+      ctacteAmount: inv.ctacteAmount || 0
     });
   });
 
@@ -523,7 +551,11 @@ export const createUnifiedTransactions = (
         totalDiscount: 0,
         items: [],
         hasStockDetail: true,
-        hasFinancialDetail: false
+        hasFinancialDetail: false,
+        cashAmount: 0,
+        cardAmount: 0,
+        osAmount: 0,
+        ctacteAmount: 0
       };
       unifiedMap.set(key, transaction);
     }

@@ -74,6 +74,10 @@ export interface InvoiceRecord {
   netAmount: number; // Imp. Neto
   grossAmount: number; // Imp. Bruto
   discount: number; // Imp. Dto/Rec
+  cashAmount?: number;
+  cardAmount?: number;
+  osAmount?: number;
+  ctacteAmount?: number;
 }
 
 export interface MonthlyStats {
@@ -249,6 +253,11 @@ export interface UnifiedTransaction {
   items: UnifiedItem[];
   hasStockDetail: boolean;
   hasFinancialDetail: boolean;
+  // New granular payment fields
+  cashAmount: number;
+  cardAmount: number;
+  osAmount: number;
+  ctacteAmount: number;
 }
 
 export interface UniversalSyncResult {
