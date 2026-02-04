@@ -13,9 +13,15 @@ interface ZettiSyncProps {
     startDate: string;
     endDate: string;
     onDataImported: (data: any) => void;
+    sellerMappings?: Record<string, string>;
 }
 
-export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onDataImported }) => {
+export const ZettiSync: React.FC<ZettiSyncProps> = ({
+    startDate,
+    endDate,
+    onDataImported,
+    sellerMappings = {}
+}) => {
     const [status, setStatus] = useState<'idle' | 'tunneling' | 'success' | 'error'>('idle');
     const [error, setError] = useState<string | null>(null);
     const [results, setResults] = useState<any[]>([]);
@@ -441,7 +447,8 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
     };
 
     const processAndSaveAll = async (raw: { sales: any[], expenses: any[], insurance: any[], customers: any[] }) => {
-        // --- VENTAS & INVOICES ---
+        addLog('Iniciando procesamiento bajo REGLAS DE ORO...', 'info');
+
         const invoices: InvoiceRecord[] = [];
         const allSales: SaleRecord[] = [];
 
@@ -452,313 +459,186 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
             if (p.barcode) masterMap.set(p.barcode.toString().trim(), p);
         });
 
-        const SELLER_MAP: Record<string, string> = {
-            'LDICKSTEIN': 'LUCAS DICKSTEIN',
-            'FLA': 'DIBLASI FLAVIA',
-            'IVAN': 'IVAN GARAY',
-            'DIAME': 'DIAMELA OJEDA',
-            'SHEILA': 'SHEILA BRAHIM',
-            'ADMINFTW': 'ADMINISTRACION',
-            'ZZ LORENA': 'LORENA',
-            'SIL': 'SILVIA ALONSO',
-            'CARLA': 'CARLA'
-        };
-
         raw.sales.forEach(item => {
             const rawDate = item.fec || item.emissionDate || new Date().toISOString();
-            // PRIMACÍA DE AGREEMENTS: Es la fuente de la verdad financiera
-            const agreements = item.agreements || item.values || item.pagos || [];
+            const normalizedDate = new Date(rawDate.includes('T') ? rawDate : `${rawDate.split(' ')[0]}T12:00:00`);
 
-            let totalCash = 0;
-            let totalCard = 0;
-            let totalOS = 0;
-            let totalCTACTE = 0;
-            let mainPay = 'Efectivo';
-            let isModo = false;
-            let hasValidPayment = false;
-
-            // Recorremos los acuerdos de pago para armar el "Puzzle Financiero"
-            agreements.forEach((v: any) => {
-                // REGLA AUDITORIA #9: Si un pago está anulado, excluir explícitamente.
-                if (v.cancellation || v.anulado) return;
-
-                const amount = parseCurrency(v.mainAmount || v.amount || v.importe || v.total || v.value || 0);
-
-                const typeId = v.valueType?.id?.toString() || v.typeId?.toString();
-                const typeName = (v.valueType?.name || v.t || v.name || '').toUpperCase();
-                const subType = (v.subValueType?.description || '').toUpperCase();
-
-                // Placeholder de Efectivo anulado o 0 no suma si es 'cash', pero otros tipos sí pueden ser 0 conceptualmente? 
-                // Mejor ignorar 0 en general excepto si es el único.
-                if (amount === 0) return;
-
-                hasValidPayment = true;
-
-                // 1. OBRAS SOCIALES (El aporte institucional)
-                if (typeId === '2' || typeId === '211' || v.t === 'prescription' || typeName.includes('CONVENIO') || typeName.includes('PAMI') || typeName.includes('OS') || typeName.includes('RECE')) {
-                    totalOS += amount;
-                    if (mainPay === 'Efectivo') mainPay = 'Obra Social';
-                }
-                // 2. CUENTAS CORRIENTES (Explícitas)
-                else if (typeId === '22' || v.t === 'checkingAccount' || typeName.includes('CTA') || typeName.includes('CORRIENTE')) {
-                    totalCTACTE += amount;
-                    if (mainPay === 'Efectivo') mainPay = 'Cuenta Corriente';
-                }
-                // 3. TARJETAS (Lo que paga el cliente con plástico)
-                else if (typeId === '9' || v.card || typeName.includes('TARJ') || subType.includes('TARJETA') || v.t === 'card' || v.t === 'cardInstallment') {
-                    totalCard += amount;
-                    if (v.card?.name?.toUpperCase().includes('MODO')) isModo = true;
-                    if (mainPay === 'Efectivo' || mainPay === 'Obra Social') mainPay = v.card?.name || 'Tarjeta';
-                }
-                // 4. BILLETERAS DIGITALES (MODO, MP, QR)
-                else if (typeName.includes('MODO') || typeName.includes('QR') || typeName.includes('MP') || typeName.includes('MERCADO')) {
-                    totalCard += amount;
-                    isModo = true;
-                    mainPay = 'Billetera Digital';
-                }
-                // 5. EFECTIVO (El resto o explícito)
-                else {
-                    totalCash += amount;
-                }
-            });
-
-            if (isModo) mainPay = 'MODO';
-
-            // REGLA AUDITORIA #5: Si existe agreement (entidad) y NO existe ningún pago real, clasificar como CTA CTE.
-            const hasEntity = item.healthInsuranceProvider || item.entity || item.customer;
-            if (!hasValidPayment && hasEntity && totalOS === 0 && totalCash === 0 && totalCard === 0) {
-                // Intentamos rescatar el monto del total de la factura
-                const headerTotal = parseCurrency(item.tot || item.mainAmount || 0);
-                if (headerTotal > 0) {
-                    totalCTACTE = headerTotal;
-                    mainPay = 'Cuenta Corriente';
-                }
-            }
-
-            // REGLA DE ORO DE ZETTI: El total del header debe coincidir con la venta neta real.
-            const sumValues = totalCash + totalCard + totalOS + totalCTACTE;
-            let finalTotal = sumValues;
-
-            // Fallback: Si agreements vacíos o 0, usamos header o items
-            if (finalTotal === 0) {
-                const headerTotal = parseCurrency(item.tot || item.mainAmount || 0);
-                const itemSum = (item.items || []).reduce((acc: number, it: any) => acc + parseCurrency(it.sub), 0);
-                finalTotal = itemSum > 0 ? itemSum : headerTotal;
-            }
-
-            // Skip anomaly "BILLETE" entries with 0 amount (Solo basura)
-            if (finalTotal === 0 && (item.tco || '').toUpperCase().includes('BILLETE')) return;
-
-            // MAPEO DE CLIENTE: Prioridad al nombre real del cliente
-            const finalClient = item.customer?.firstName
-                ? `${item.customer.lastName} ${item.customer.firstName}`.trim()
-                : (item.cli || item.customer?.name || 'CONSUMIDOR FINAL');
-
-            // MEJORA NOMBRE OBRA SOCIAL: Buscar en profundidad el nombre de la entidad
-            let entityName = item.healthInsuranceProvider?.name || item.entity?.name;
-
-            // Si no está en el root, buscamos en los agreements de tipo prescription
-            if (!entityName) {
-                const agrOS = agreements.find((a: any) => a.healthInsurance || a.entity);
-                if (agrOS) {
-                    entityName = agrOS.healthInsurance?.name || agrOS.entity?.name;
-                }
-            }
-
-            // Fallback final
-            const entity = entityName || (totalOS > 0 ? 'Obra Social' : 'Particular');
-
-            // --- RESTORED LOGIC START ---
+            // 1. ANALISIS DE TIPO Y NUMERO
             let normalizedType = 'FV';
             const tco = (item.tco || '').toUpperCase();
             if (tco.includes('NC') || tco.includes('CREDITO')) normalizedType = 'NC';
             else if (tco.includes('TRANSFER') || tco.includes('TX')) normalizedType = 'TX';
-            else normalizedType = item.tco || 'FV';
+            else if (tco.includes('ND')) normalizedType = 'ND';
 
-            const normalizedDate = new Date(rawDate.includes('T') ? rawDate : `${rawDate.split(' ')[0]}T12:00:00`);
-
-            // MAPEO DE VENDEDOR REFINADO (REGLA AUDITORIA #3)
-            const userObj = item.modificationUser || item.creationUser;
-            const rawSeller = userObj?.alias || userObj?.description || item.seller?.name || item.ven || item.vendedor || 'BIO';
-            const finalSeller = SELLER_MAP[rawSeller.toUpperCase()] || rawSeller;
-            // --- RESTORED LOGIC END ---
-
-            // ID DETERMINISTA PARA EVITAR DUPLICADOS
             const invoiceNumber = item.codification || item.cod || item.number || 'S/N';
-            const deterministicId = `Z-${invoiceNumber}-${normalizedType}`;
+            const branch = item._branch || 'FCIA BIOSALUD';
 
+            // ID DETERMINISTA (Regla de Oro #3)
+            const deterministicId = `Z-${branch}-${invoiceNumber}-${normalizedType}`.replace(/\s+/g, '_');
+
+            // 2. FILTRADO DE ITEMS (Regla de Oro #1)
+            const seenItems = new Set<string>();
+            const headerTotal = parseCurrency(item.tot || item.mainAmount || 0);
+
+            const filteredItems = (item.items || []).filter((it: any) => {
+                const name = (it.product?.name || it.product?.description || it.nom || '').toUpperCase();
+
+                // Ignorar líneas técnicas o de resumen
+                if (name.includes('TOTAL') || name.includes('COBERTURA') || name.includes('APORTE') || name.includes('BONIF') || name.includes('{')) return false;
+
+                // Si el item tiene el mismo total que el ticket y hay más de un item, es sospechoso de ser un resumen
+                if (Math.abs(parseCurrency(it.sub || it.amount) - headerTotal) < 0.1 && (item.items || []).length > 1) {
+                    if (name.includes('VENTA') || name.includes('RECETA')) return false;
+                }
+
+                const itemId = it.id?.toString() || `${it.product?.id || 'P'}-${it.amount}-${it.quantity}`;
+                if (seenItems.has(itemId)) return false;
+                seenItems.add(itemId);
+                return true;
+            });
+
+            // 3. CALCULO DE TOTAL (Regla de Oro #2: Los items mandan)
+            const calculatedTotal = filteredItems.reduce((acc, it) => acc + parseCurrency(it.sub || it.amount), 0);
+            const finalTotal = calculatedTotal !== 0 ? calculatedTotal : headerTotal;
+
+            // 4. DESGLOSE FINANCIERO (Agreements)
+            const agreements = item.agreements || item.values || item.pagos || [];
+            let totalCash = 0, totalCard = 0, totalOS = 0, totalCTACTE = 0;
+            let mainPay = 'Efectivo';
+            let isModo = false;
+
+            agreements.forEach((v: any) => {
+                if (v.cancellation || v.anulado) return;
+                const amt = parseCurrency(v.mainAmount || v.amount || v.value || 0);
+                if (amt === 0) return;
+
+                const typeName = (v.valueType?.name || v.t || v.name || '').toUpperCase();
+                const typeId = v.valueType?.id?.toString() || v.typeId?.toString();
+
+                if (typeId === '2' || typeId === '211' || v.t === 'prescription' || typeName.includes('CONVENIO') || typeName.includes('PAMI') || typeName.includes('OS')) {
+                    totalOS += amt;
+                    if (mainPay === 'Efectivo') mainPay = 'Obra Social';
+                } else if (typeId === '22' || v.t === 'checkingAccount' || typeName.includes('CTACTE') || typeName.includes('CORRIENTE')) {
+                    totalCTACTE += amt;
+                    mainPay = 'Cuenta Corriente';
+                } else if (typeId === '9' || v.card || typeName.includes('TARJ') || v.t === 'card') {
+                    totalCard += amt;
+                    if (v.card?.name?.toUpperCase().includes('MODO')) isModo = true;
+                    if (mainPay === 'Efectivo') mainPay = v.card?.name || 'Tarjeta';
+                } else {
+                    totalCash += amt;
+                }
+            });
+            if (isModo) mainPay = 'MODO';
+
+            // 5. VENDEDOR (Regla de Oro #5)
+            const userObj = item.modificationUser || item.creationUser;
+            const alias = (userObj?.alias || item.ven || 'BIO').toUpperCase();
+            const finalSeller = sellerMappings[alias] || alias;
+
+            // 6. BUILD INVOICE
             const invoice: InvoiceRecord = {
-                id: item.id ? item.id.toString() : deterministicId,
+                id: deterministicId,
                 invoiceNumber: invoiceNumber,
                 type: normalizedType as any,
                 date: normalizedDate,
                 monthYear: format(normalizedDate, 'yyyy-MM'),
-                grossAmount: finalTotal, // Total de la operación (Bolsillo Cliente + Aporte OS)
+                grossAmount: finalTotal,
                 netAmount: finalTotal,
                 discount: 0,
                 seller: finalSeller,
-                entity: entity,
-                insurance: totalOS > 0 ? entity : '-',
+                entity: item.healthInsuranceProvider?.name || item.entity?.name || (totalOS > 0 ? 'Obra Social' : 'Particular'),
+                insurance: totalOS > 0 ? (item.healthInsuranceProvider?.name || 'O.S.') : '-',
                 paymentType: mainPay,
-                branch: item._branch || 'FCIA BIOSALUD',
-                client: finalClient,
+                branch: branch,
+                client: item.customer?.firstName ? `${item.customer.lastName} ${item.customer.firstName}`.trim() : (item.cli || 'PARTICULAR'),
                 cashAmount: totalCash,
                 cardAmount: totalCard,
-                osAmount: totalOS, // CAMPO CRÍTICO: Aquí viaja lo que paga PAMI/OS
+                osAmount: totalOS,
                 ctacteAmount: totalCTACTE
             };
             invoices.push(invoice);
 
-            (item.items || []).forEach((it: any) => {
-                // COSTOS Y PRECIOS
-                // costPrice en Zetti suele ser PVP (Precio de Lista).
-                // purchaseCost es el Costo de Reposición (si existe).
-                const listPrice = parseCurrency(it.costPrice || 0); // PVP
-                const netPrice = parseCurrency(it.unitPrice || it.pre || 0); // Precio Cobrado Real
-
-                // Para margen (profit), necesitamos el costo de compra. Si no está, estimamos o usamos listPrice con descuento std.
-                // PRIORIDAD: purchaseCost > cost > 0
-                const unitCost = parseCurrency(it.purchaseCost || it.cost || 0);
-
-                const barcode = (it.product?.barCode || it.product?.barcode || it.bar || it.barcode || it.code || it.ean || '').toString().trim();
+            // 7. BUILD SALES
+            filteredItems.forEach((it: any, idx: number) => {
+                const barcode = (it.product?.barCode || it.product?.barcode || it.code || '').toString().trim();
                 const masterInfo = masterMap.get(barcode);
-                const finalCategory = masterInfo?.category || it.category?.name || it.cat || it.rubro || it.lab || 'Varios';
-                const finalManufacturer = masterInfo?.manufacturer || it.manufacturer?.name || it.product?.manufacturer?.name || it.lab || it.fab || 'Zetti';
-                const pName = it.product?.name || it.nom || it.name || it.productName || it.product?.description || 'Producto';
-
-                let itemTotal = parseCurrency(it.sub || it.amount);
-                const qty = parseCurrency(it.can || it.quantity) || 1;
-
-                if (itemTotal === 0 && netPrice > 0) {
-                    itemTotal = netPrice * qty;
-                }
-
-                // Distribución proporcional si el ítem vino en 0 pero la factura tiene total (caso raro)
-                if (itemTotal === 0 && invoice.grossAmount > 0 && (item.items || []).length === 1) {
-                    itemTotal = invoice.grossAmount;
-                }
 
                 allSales.push({
-                    id: `${invoice.id}-${it.id || Math.random()}`,
+                    id: `${deterministicId}-${idx}`,
                     invoiceNumber: invoice.invoiceNumber,
                     date: normalizedDate,
                     monthYear: invoice.monthYear,
-                    productName: pName,
-                    quantity: qty,
-                    unitPrice: netPrice > 0 ? netPrice : (itemTotal / qty),
-                    totalAmount: itemTotal,
-                    category: finalCategory,
-                    branch: invoice.branch,
-                    sellerName: invoice.seller,
+                    productName: it.product?.name || it.nom || 'Producto',
+                    quantity: parseCurrency(it.can || it.quantity) || 1,
+                    unitPrice: parseCurrency(it.unitPrice || it.pre || 0),
+                    totalAmount: parseCurrency(it.sub || it.amount),
+                    category: masterInfo?.category || it.category?.name || 'Varios',
+                    branch: branch,
+                    sellerName: finalSeller,
                     entity: invoice.entity,
-                    paymentMethod: invoice.paymentType,
+                    paymentMethod: mainPay,
                     barcode: barcode,
-                    manufacturer: finalManufacturer,
-                    unitCost: unitCost,
+                    manufacturer: masterInfo?.manufacturer || it.manufacturer?.name || 'S/D',
                     hour: normalizedDate.getHours()
                 });
             });
         });
 
-        // --- GASTOS & SERVICIOS ---
+        // --- GASTOS, OS y CtaCte (Rest of the logic simplified) ---
         const mappedExpenses: ExpenseRecord[] = [];
         const mappedServices: ExpenseRecord[] = [];
         const serviceCategories = await getMetadata('service_categories') || {};
 
         raw.expenses.forEach(r => {
-            const amount = parseCurrency(r.mainAmount || r.totalAmount || r.amount || '0');
-            const supplierName = r.supplier?.name || r.provider?.name || (typeof r.supplier === 'string' ? r.supplier : 'Proveedor');
-            const isService = !!serviceCategories[supplierName];
-
-            const record: ExpenseRecord = {
-                id: r.id?.toString() || Math.random().toString(),
-                supplier: supplierName,
-                amount: amount,
+            const amt = parseCurrency(r.mainAmount || r.amount || 0);
+            const sup = r.supplier?.name || r.provider?.name || 'Proveedor';
+            const isSrv = !!serviceCategories[sup];
+            const exp: ExpenseRecord = {
+                id: `E-${r.id || Math.random()}`,
+                supplier: sup,
+                amount: amt,
                 issueDate: new Date(r.emissionDate || new Date()),
                 dueDate: new Date(r.dueDate || r.emissionDate || new Date()),
                 branch: r._branch || 'General',
                 monthYear: format(new Date(r.emissionDate || new Date()), 'yyyy-MM'),
-                code: r.number || r.codification || '-',
+                code: r.number || '-',
                 type: r.valueType?.name || 'Factura',
                 status: r.status?.name || 'Pagado',
-                operationType: isService ? 'Servicio Zetti' : 'Gasto Zetti',
+                operationType: isSrv ? 'Servicio Zetti' : 'Gasto Zetti',
                 items: []
             };
-            if (isService) mappedServices.push(record);
-            else mappedExpenses.push(record);
+            if (isSrv) mappedServices.push(exp); else mappedExpenses.push(exp);
         });
 
-        // --- OBRAS SOCIALES (SEGUROS) ---
-        const mappedInsurance: InsuranceRecord[] = [];
-        // 1. Recetas explícitas
-        raw.insurance.forEach(r => {
-            const amount = parseCurrency(r.mainAmount || r.totalAmount || r.amount || 0);
-            const entityName = r.healthInsuranceProvider?.name || r.entity?.name || 'O.S.';
-            if (entityName.toUpperCase().includes('DEL SUD') || entityName.toUpperCase().includes('MONROE')) return;
+        const mappedInsurance: InsuranceRecord[] = raw.insurance.map(r => ({
+            id: `I-${r.id || Math.random()}`,
+            entity: r.healthInsuranceProvider?.name || 'O.S.',
+            amount: parseCurrency(r.mainAmount || 0),
+            issueDate: new Date(r.emissionDate || new Date()),
+            dueDate: new Date(r.dueDate || new Date()),
+            branch: r._branch || 'General',
+            monthYear: format(new Date(r.emissionDate || new Date()), 'yyyy-MM'),
+            code: r.number || '-',
+            type: 'Receta',
+            status: 'INGRESADO',
+            operationType: 'Receta Zetti',
+            items: []
+        }));
 
-            const agreement = (r.agreements || []).find((a: any) => a.type === 'prescription');
-            mappedInsurance.push({
-                id: r.id?.toString() || Math.random().toString(),
-                entity: entityName,
-                amount: amount,
-                patientAmount: agreement ? parseCurrency(agreement.clientAmount) : 0,
-                totalVoucher: amount + (agreement ? parseCurrency(agreement.clientAmount) : 0),
-                affiliate: agreement?.affiliateNumber || agreement?.affiliateName || '-',
-                plan: agreement?.healthInsurancePlan?.name || '-',
-                issueDate: new Date(r.emissionDate || new Date()),
-                dueDate: new Date(r.dueDate || r.emissionDate || new Date()),
-                branch: r._branch || 'General',
-                monthYear: format(new Date(r.emissionDate || new Date()), 'yyyy-MM'),
-                code: r.number || r.codification || '-',
-                type: r.valueType?.name || 'Receta',
-                status: r.status?.name || 'INGRESADO',
-                operationType: 'Receta Zetti',
-                items: []
-            });
-        });
-
-        // 2. Proyectar de ventas si no están mapeadas
-        invoices.forEach(inv => {
-            if (inv.osAmount > 0) {
-                const alreadyMapped = mappedInsurance.some(mi => mi.code === inv.invoiceNumber);
-                if (!alreadyMapped) {
-                    mappedInsurance.push({
-                        id: `INV-OS-${inv.id}`,
-                        entity: inv.entity,
-                        amount: inv.osAmount,
-                        patientAmount: inv.cashAmount + inv.cardAmount,
-                        totalVoucher: inv.grossAmount,
-                        affiliate: '-',
-                        plan: '-',
-                        issueDate: inv.date,
-                        dueDate: inv.date,
-                        branch: inv.branch,
-                        monthYear: inv.monthYear,
-                        code: inv.invoiceNumber,
-                        type: 'Venta con OS',
-                        status: 'DETECTADO',
-                        operationType: 'Receta Proyectada',
-                        items: []
-                    });
-                }
-            }
-        });
-
-        // --- CLIENTES (CTA CTE) ---
-        const mappedCurrentAccount = raw.customers.filter((c: any) => (c.balance || 0) !== 0).map((c: any) => ({
-            id: c.id?.toString() || Math.random().toString(),
-            entity: c.fullName || c.razonSocial || 'Cliente Desconocido',
+        const mappedCurrentAccount = raw.customers.filter(c => (c.balance || 0) !== 0).map(c => ({
+            id: `BC-${c._branch || 'G'}-${(c.fullName || c.razonSocial || 'C').replace(/\s+/g, '')}`,
+            entity: c.fullName || c.razonSocial || 'Cliente',
             date: new Date(),
             type: (c.balance || 0) > 0 ? 'Debe' : 'Haber',
             debit: (c.balance || 0) > 0 ? c.balance : 0,
             credit: (c.balance || 0) < 0 ? Math.abs(c.balance) : 0,
             balance: c.balance || 0,
-            description: 'Saldo Actualizado via API',
+            description: 'Saldo API',
             reference: c.code || '-',
             branch: c._branch || 'General'
         }));
 
-        addLog('Iniciando persistencia en la nube...', 'info');
         await Promise.all([
             saveSalesToDB(allSales),
             saveInvoicesToDB(invoices),
@@ -768,23 +648,8 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
             saveCurrentAccountsToDB(mappedCurrentAccount)
         ]);
 
-        addLog('✅ Sincronización guardada exitosamente.', 'success');
-
-        (window as any)._lastSyncLog = {
-            date: new Date().toISOString(),
-            stats: { invoices: invoices.length, sales: allSales.length, expenses: mappedExpenses.length, insurance: mappedInsurance.length },
-            rawSalesSample: raw.sales.slice(0, 2),
-            mappedSalesSample: allSales.slice(0, 2)
-        };
-
-        onDataImported({
-            invoices,
-            sales: allSales,
-            expenses: mappedExpenses,
-            insurance: mappedInsurance,
-            services: mappedServices,
-            currentAccounts: mappedCurrentAccount
-        });
+        onDataImported({ invoices, sales: allSales, expenses: mappedExpenses, insurance: mappedInsurance, services: mappedServices, currentAccounts: mappedCurrentAccount });
+        addLog(`✅ Sincronización finalizada: ${invoices.length} Invoices procesadas.`, 'success');
     };
 
     const handleSyncMasterFromFirestore = async () => {
@@ -977,99 +842,21 @@ export const ZettiSync: React.FC<ZettiSyncProps> = ({ startDate, endDate, onData
             setIsUploadingMaster(false);
         }
     };
-    const handleImport = () => {
+    const handleImport = async () => {
         if (results.length === 0) return;
 
-        // ⚠️ CRITICAL: Use Map to prevent duplicates WITHIN same sync batch
-        const invoiceMap = new Map<string, InvoiceRecord>();
-        const allSales: SaleRecord[] = [];
+        addLog('Iniciando importación manual bajo REGLAS DE ORO...', 'warn');
 
-        results.forEach(item => {
-            const rawDate = item.fec || item.emissionDate || new Date().toISOString();
-            const uniqueId = item.id ? item.id.toString() : `Z-${item.cod || 'SN'}-${format(new Date(rawDate), 'yyyyMMddHHmm')}`;
+        // Determinamos qué tipo de datos estamos importando basado en la pestaña actual
+        const data = {
+            sales: viewTab === 'sales' ? results : [],
+            expenses: viewTab === 'expenses' ? results : [],
+            insurance: viewTab === 'insurance' ? results : [],
+            customers: []
+        };
 
-            // REGLA 5: Deduplicación (Prevenir duplicados de tarjeta/Zetti)
-            if (invoiceMap.has(uniqueId)) return;
-
-            // ANALISIS DE COMPROBANTE (Reglas 3 y 4)
-            let type = 'FV';
-            const tco = (item.tco || 'FV').toUpperCase();
-            const pays = item.agreements || item.pagos || [];
-            const check = pays.find((p: any) => p.type === 'checking' || p.t === 'checkingAccount' || p.valueType?.name === 'CTACTE');
-
-            // Detección de Transferencia Interna (TX)
-            const isTX = (item.customer?.name || item.cli || '').toUpperCase().includes('BIOSALUD') || tco.includes('TX');
-
-            if (tco.includes('NC')) type = 'NC';
-            else if (isTX) type = 'TX';
-            else if (tco.includes('ND')) type = 'ND';
-
-            // REGLA 1: Filtro de productos reales (Independiente de lo que diga Zetti)
-            const seenItems = new Set<string>();
-            const zTotal = Number(item.tot) || 0;
-            const products = (item.items || []).filter((it: any) => {
-                const isReal = it.product && it.product.id && (it.product.name || it.product.description);
-                if (!isReal) return false;
-
-                // Ignorar líneas de resumen/técnicas (Regla 1)
-                const isSummary = Number(it.amount) === zTotal && item.items.length > 1;
-                if (isSummary && (it.product?.name || '').toUpperCase().includes('TOTAL')) return false;
-
-                const itemId = it.id?.toString() || `${it.product.id}-${it.amount}`;
-                if (seenItems.has(itemId)) return false;
-                seenItems.add(itemId);
-                return true;
-            });
-
-            // REGLA 2: Fuente Única - El total ES la suma de productos
-            const calculatedSum = products.reduce((s, i) => s + (Number(i.amount) || 0), 0);
-
-            const invoice: InvoiceRecord = {
-                id: uniqueId,
-                invoiceNumber: item.cod || 'S/N',
-                type: type as 'FV' | 'NC' | 'TX',
-                date: new Date(rawDate),
-                monthYear: format(new Date(rawDate), 'yyyy-MM'),
-                grossAmount: calculatedSum,
-                netAmount: calculatedSum,
-                discount: 0,
-                seller: item.creationUser?.alias || 'BIO',
-                entity: item.agreement?.n || item.entity || 'Particular',
-                insurance: (item.agreement?.n || item.entity || 'Particular') !== 'Particular' ? (item.agreement?.n || item.entity) : '-',
-                paymentType: check ? 'Cuenta Corriente' : (pays[0]?.n || 'Efectivo'),
-                branch: item._branch || 'FCIA BIOSALUD',
-                client: item.cli || 'Particular'
-            };
-            invoiceMap.set(uniqueId, invoice);
-
-            // REGLA 0: Registro de Ventas Unificado
-            products.forEach((it: any, idx) => {
-                const sId = `${invoice.id}-${it.id || idx}`;
-                allSales.push({
-                    id: sId,
-                    invoiceNumber: invoice.invoiceNumber,
-                    date: invoice.date,
-                    monthYear: invoice.monthYear,
-                    productName: it.product?.name || 'Producto',
-                    quantity: Number(it.quantity || it.can || 1),
-                    unitPrice: Number(it.unitPrice || it.pre || 0),
-                    totalAmount: Number(it.amount) || 0,
-                    category: it.category?.name || it.rubro?.name || 'Varios',
-                    branch: invoice.branch,
-                    sellerName: invoice.seller,
-                    entity: invoice.entity,
-                    paymentMethod: invoice.paymentType,
-                    barcode: (it.product?.barCode || it.product?.barcode || '').toString().trim(),
-                    hour: invoice.date.getHours(),
-                    manufacturer: it.manufacturer?.name || 'Zetti'
-                });
-            });
-        });
-
-        const invoices = Array.from(invoiceMap.values());
-        onDataImported({ invoices, sales: allSales });
-        addLog(`✅ Importación bajo REGLAS DE ORO: ${invoices.length} Facturas, ${allSales.length} Ventas.`, 'success');
-        alert(`Sincronización completa: Los datos se han reconstruido siguiendo la FUENTE ÚNICA de productos.`);
+        await processAndSaveAll(data);
+        alert(`Importación completada: Los datos de ${viewTab} se han reconstruido siguiendo la FUENTE ÚNICA.`);
     };
 
     // --- FILTER LOGIC ---

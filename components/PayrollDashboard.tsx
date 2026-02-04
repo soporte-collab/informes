@@ -350,8 +350,6 @@ export const PayrollDashboard: React.FC<Props> = ({
                 {activeTab === 'hr' && (
                     <div className="flex bg-slate-100/50 p-1 rounded-xl border border-slate-200/50">
                         <button onClick={() => setHrSubTab('employees')} className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tighter transition-all ${hrSubTab === 'employees' ? 'bg-teal-600 text-white shadow-lg shadow-teal-500/20' : 'text-slate-400'}`}>Legajos</button>
-                        <button onClick={() => setHrSubTab('attendance')} className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tighter transition-all ${hrSubTab === 'attendance' ? 'bg-teal-600 text-white shadow-lg shadow-teal-500/20' : 'text-slate-400'}`}>Fichadas</button>
-                        <button onClick={() => setHrSubTab('efficiency')} className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-tighter transition-all ${hrSubTab === 'efficiency' ? 'bg-teal-600 text-white shadow-lg shadow-teal-500/20' : 'text-slate-400'}`}>Eficiencia ⚡</button>
                     </div>
                 )}
 
@@ -476,92 +474,6 @@ export const PayrollDashboard: React.FC<Props> = ({
                                     </button>
                                 </div>
                             ))}
-                        </div>
-                    )}
-
-                    {hrSubTab === 'attendance' && (
-                        <div className="space-y-6">
-                            <div className="bg-white p-12 rounded-[40px] border-2 border-dashed border-slate-100 shadow-sm flex flex-col items-center text-center">
-                                <div className="p-5 bg-teal-600 rounded-3xl text-white shadow-2xl shadow-teal-100 mb-6">
-                                    <Clock className="w-10 h-10" />
-                                </div>
-                                <h3 className="font-black text-slate-900 text-2xl uppercase tracking-tighter mb-2">Carga de Fichadas</h3>
-                                <p className="text-sm text-slate-500 font-medium mb-8 max-w-sm">Sube los archivos XLS generados por el reloj de control para procesar horas y puntualidad.</p>
-
-                                <label className="relative group cursor-pointer inline-block">
-                                    <input type="file" multiple accept=".xls,.xlsx" onChange={handleAttendanceImport} className="hidden" />
-                                    <div className="px-10 py-5 bg-slate-900 group-hover:bg-teal-600 text-white rounded-[24px] font-black text-[10px] uppercase tracking-widest flex items-center gap-3 transition-all shadow-2xl active:scale-95">
-                                        <Plus className="w-5 h-5" />
-                                        Seleccionar Archivos de Horarios
-                                    </div>
-                                </label>
-                            </div>
-
-                            <div className="bg-white rounded-[32px] border border-slate-100 shadow-xl overflow-hidden">
-                                <div className="p-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
-                                    <h3 className="font-black text-slate-800 uppercase text-xs tracking-widest">Registros Procesados</h3>
-                                    <select
-                                        value={selectedEmployeeForAttendance}
-                                        onChange={(e) => setSelectedEmployeeForAttendance(e.target.value)}
-                                        className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-[10px] font-black uppercase outline-none"
-                                    >
-                                        <option value="all">TODOS EL PERSONAL</option>
-                                        {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-                                    </select>
-                                </div>
-                                <div className="overflow-x-auto">
-                                    <table className="w-full">
-                                        <thead className="bg-slate-50/50">
-                                            <tr className="text-[10px] font-black uppercase text-slate-400">
-                                                <th className="p-6 text-left">Empleado</th>
-                                                <th className="p-6 text-left">Fecha</th>
-                                                <th className="p-6 text-center">Entrada 1</th>
-                                                <th className="p-6 text-center">Salida 1</th>
-                                                <th className="p-6 text-center">Entrada 2</th>
-                                                <th className="p-6 text-center">Salida 2</th>
-                                                <th className="p-6 text-center">Estado</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-50">
-                                            {attendance
-                                                .filter(a => selectedEmployeeForAttendance === 'all' || a.employeeId === selectedEmployeeForAttendance)
-                                                .slice(0, 100)
-                                                .map((r, i) => (
-                                                    <tr key={i} className="hover:bg-slate-50/50 transition-colors">
-                                                        <td className="p-6 font-black text-slate-800 uppercase text-[10px]">{r.employeeName}</td>
-                                                        <td className="p-6 font-bold text-slate-500 text-[10px]">{r.date}</td>
-                                                        <td className="p-6 text-center font-mono font-bold text-teal-600 bg-teal-50/30 text-xs">{r.entrance1 || '--:--'}</td>
-                                                        <td className="p-6 text-center font-mono font-bold text-slate-400 text-xs">{r.exit1 || '--:--'}</td>
-                                                        <td className="p-6 text-center font-mono font-bold text-teal-600 bg-teal-50/30 text-xs">{r.entrance2 || '--:--'}</td>
-                                                        <td className="p-6 text-center font-mono font-bold text-slate-400 text-xs">{r.exit2 || '--:--'}</td>
-                                                        <td className="p-6 text-center">
-                                                            <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase ${r.status === 'present' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
-                                                                }`}>
-                                                                {r.status}
-                                                            </span>
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {hrSubTab === 'efficiency' && (
-                        <div className="bg-white p-20 rounded-[48px] border border-slate-100 shadow-xl flex flex-col items-center text-center">
-                            <div className="p-6 bg-slate-900 rounded-[32px] text-teal-400 mb-8 animate-pulse shadow-2xl">
-                                <TrendingUp className="w-12 h-12" />
-                            </div>
-                            <h3 className="text-3xl font-black text-slate-900 uppercase tracking-tighter mb-4">Motor de Inteligencia de Eficiencia</h3>
-                            <p className="text-slate-500 max-w-lg font-medium leading-relaxed">
-                                Estamos vinculando las **Fichadas Reales** con las **Ventas Zetti** de cada vendedor.
-                                En breve verás la producción minuto a minuto, tickets por hora y ratios de conversión aquí.
-                            </p>
-                            <div className="mt-12 grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-2xl">
-                                {[1, 2, 3, 4].map(i => <div key={i} className="h-24 bg-slate-50 rounded-3xl border border-slate-100 animate-pulse"></div>)}
-                            </div>
                         </div>
                     )}
                 </div>
@@ -725,6 +637,8 @@ export const PayrollDashboard: React.FC<Props> = ({
                             holidays={holidays}
                             permits={permits.filter(p => p.employeeId === selectedEmployeeDetail.id)}
                             sales={fetchedSales.filter(s => fuzzyMatch(s.sellerName, selectedEmployeeDetail.zettiSellerName || ''))}
+                            startDate={startDate}
+                            endDate={endDate}
                             onAddLicense={async (date) => {
                                 const type = window.prompt("Tipo de licencia (vacation, medical, permit):") as any;
                                 if (!type) return;

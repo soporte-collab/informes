@@ -19,7 +19,8 @@ import { SellersDashboard } from './components/SellersDashboard';
 import { PayrollDashboard } from './components/PayrollDashboard';
 import { LiveDashboard } from './components/LiveDashboard';
 import { ManualImport } from './components/ManualImport';
-import { Activity, LogOut, Trash2, HardDrive, BarChart3, FileText, Radar, Upload, RefreshCw, ShoppingCart, Wallet, Lightbulb, CloudLightning, Blend, LayoutDashboard, Package, Users, Truck, Calendar, Menu, Printer, Banknote, ShieldCheck } from 'lucide-react';
+import { SchedulesDashboard } from './components/SchedulesDashboard';
+import { Activity, LogOut, Trash2, HardDrive, BarChart3, FileText, Radar, Upload, RefreshCw, ShoppingCart, Wallet, Lightbulb, CloudLightning, Blend, LayoutDashboard, Package, Users, Truck, Calendar, Menu, Printer, Banknote, ShieldCheck, Building2, Clock } from 'lucide-react';
 import {
     getAllSalesFromDB, saveSalesToDB, clearDB, saveInvoicesToDB, getAllInvoicesFromDB,
     getAllExpensesFromDB, saveExpensesToDB, getAllCurrentAccountsFromDB, saveCurrentAccountsToDB,
@@ -27,7 +28,7 @@ import {
     getAllServicesFromDB, saveServicesToDB, getAllUnifiedFromDB, saveUnifiedToDB,
     getAllPayrollFromDB, getAllEmployeesFromDB, saveEmployeesToDB,
     clearCurrentAccountsDB, clearExpensesDB, clearSalesDB, clearInvoicesDB, clearStockDB, clearInsuranceDB, clearServicesDB,
-    getMetadata, saveMetadata
+    getMetadata, saveMetadata, getAllSellerMappingsFromDB, saveSellerMappingsToDB
 } from './utils/db';
 import * as firebaseAuth from 'firebase/auth';
 import { auth } from './src/firebaseConfig';
@@ -47,7 +48,7 @@ const App: React.FC = () => {
     const [insuranceData, setInsuranceData] = useState<InsuranceRecord[] | null>(null);
 
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState<'live' | 'sales' | 'invoices' | 'crossed' | 'expenses' | 'debts' | 'services' | 'zetti' | 'shopping' | 'mixMaestro' | 'import' | 'sellers' | 'payroll' | 'insurance'>('mixMaestro');
+    const [activeTab, setActiveTab] = useState<'live' | 'sales' | 'invoices' | 'crossed' | 'expenses' | 'debts' | 'services' | 'zetti' | 'shopping' | 'mixMaestro' | 'import' | 'sellers' | 'payroll' | 'insurance' | 'schedules'>('mixMaestro');
     const [selectedSeller, setSelectedSeller] = useState<string | null>(null);
     const [payrollData, setPayrollData] = useState<PayrollRecord[] | null>(null);
     const [showReport, setShowReport] = useState(false);
@@ -59,6 +60,7 @@ const App: React.FC = () => {
     const [excludedEntities, setExcludedEntities] = useState<string[]>([]);
     const [includedEntities, setIncludedEntities] = useState<string[]>([]);
     const [sidebarExpanded, setSidebarExpanded] = useState(false);
+    const [sellerMappings, setSellerMappings] = useState<Record<string, string>>({});
 
     const invoiceFileInputRef = useRef<HTMLInputElement>(null);
     const expenseFileInputRef = useRef<HTMLInputElement>(null);
@@ -73,8 +75,12 @@ const App: React.FC = () => {
             const dateStr = format(d.date, 'yyyy-MM-dd');
             const branchMatch = selectedBranch === 'all' || d.branch.toLowerCase().includes(selectedBranch.toLowerCase());
             return dateStr >= startDate && dateStr <= endDate && branchMatch;
+        }).map(sale => {
+            // Apply seller mapping here
+            const mappedName = sellerMappings[sale.sellerName] || sale.sellerName;
+            return { ...sale, sellerName: mappedName };
         });
-    }, [salesData, startDate, endDate, selectedBranch]);
+    }, [salesData, startDate, endDate, selectedBranch, sellerMappings]);
 
     const enrichedSalesData = useMemo(() => {
         if (!filteredSalesData || filteredSalesData.length === 0) return [];
@@ -104,6 +110,15 @@ const App: React.FC = () => {
             return sale;
         });
     }, [filteredSalesData, invoiceData]);
+
+    const handleUpdateSellerMappings = async (newMappings: Record<string, string>) => {
+        try {
+            setSellerMappings(newMappings);
+            await saveSellerMappingsToDB(newMappings);
+        } catch (error) {
+            console.error('Error saving seller mappings:', error);
+        }
+    };
 
     const uniqueSellers = useMemo(() => {
         if (!salesData) return [];
@@ -205,7 +220,7 @@ const App: React.FC = () => {
             if (!user) return;
             setLoading(true);
             try {
-                const [sales, invoices, expenses, currentAccounts, stock, insurance, services, cats, payroll] = await Promise.all([
+                const [sales, invoices, expenses, currentAccounts, stock, insurance, services, cats, payroll, mappings] = await Promise.all([
                     getAllSalesFromDB(),
                     getAllInvoicesFromDB(),
                     getAllExpensesFromDB(),
@@ -214,7 +229,8 @@ const App: React.FC = () => {
                     getAllInsuranceFromDB(),
                     getAllServicesFromDB(),
                     getMetadata('service_categories'),
-                    getAllPayrollFromDB()
+                    getAllPayrollFromDB(),
+                    getAllSellerMappingsFromDB()
                 ]);
                 setSalesData(sales);
                 setInvoiceData(invoices);
@@ -226,6 +242,7 @@ const App: React.FC = () => {
                 setInsuranceData(insurance);
                 setPayrollData(payroll);
                 if (cats) setSupplierCategories(cats);
+                if (mappings) setSellerMappings(mappings);
             } catch (error) {
                 console.error("Error loading data:", error);
             } finally {
@@ -334,7 +351,11 @@ const App: React.FC = () => {
             if (data.invoices) setInvoiceData(data.invoices);
             if (data.expenses) setExpenseData(data.expenses);
             if (data.insurance) setInsuranceData(data.insurance);
-            if (data.currentAccounts) setCurrentAccountData(data.currentAccounts);
+            if (data.currentAccounts) {
+                setCurrentAccountData(data.currentAccounts);
+                // PERSIST: This was missing, causing F5 loss
+                import('./utils/db').then(m => m.saveCurrentAccountsToDB(data.currentAccounts));
+            }
 
             // For services, we still need to combine with potentially existing ones or just update from data
             if (data.expenses || data.services) {
@@ -373,6 +394,9 @@ const App: React.FC = () => {
         } catch (error) {
             console.error("Error refreshing data:", error);
         }
+
+        const mappings = await getAllSellerMappingsFromDB();
+        if (mappings) setSellerMappings(mappings);
     };
 
     const handleClearCurrentAccount = async () => {
@@ -498,6 +522,10 @@ const App: React.FC = () => {
 
                     <div className="h-4"></div>
                     <p className={`text-[10px] font-black text-slate-500 uppercase tracking-widest px-4 mb-2 truncate transition-opacity duration-300 ${sidebarExpanded ? 'opacity-100' : 'opacity-0'}`}>RRHH & Rendimiento</p>
+                    <button onClick={() => setActiveTab('schedules')} className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 ${activeTab === 'schedules' ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-500/20 font-black' : 'text-slate-400 hover:text-white hover:bg-slate-800 font-medium'}`}>
+                        <Clock className="w-5 h-5 shrink-0" />
+                        <span className={`${sidebarExpanded ? 'opacity-100' : 'opacity-0 translate-x-4'} transition-all duration-300 whitespace-nowrap`}>Horarios & Asistencia</span>
+                    </button>
                     <button onClick={() => setActiveTab('sellers')} className={`w-full flex items-center gap-4 px-4 py-3 rounded-2xl transition-all duration-200 ${activeTab === 'sellers' ? 'bg-amber-500 text-white shadow-lg font-black' : 'text-slate-400 hover:text-white hover:bg-slate-800 font-medium'}`}>
                         <Users className="w-5 h-5 shrink-0" />
                         <span className={`${sidebarExpanded ? 'opacity-100' : 'opacity-0 translate-x-4'} transition-all duration-300 whitespace-nowrap`}>Panel Vendedores</span>
@@ -557,13 +585,44 @@ const App: React.FC = () => {
                 <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-slate-200 px-8 py-4 flex flex-col md:flex-row items-center justify-between gap-4 no-print shadow-sm">
                     <div className="flex items-center gap-4">
                         <button onClick={() => setSidebarExpanded(!sidebarExpanded)} className="bg-slate-100 p-2.5 rounded-xl hover:bg-slate-200 transition-all text-slate-600"><Menu className="w-5 h-5" /></button>
-                        <div className="bg-indigo-600 p-2 rounded-xl"><LayoutDashboard className="w-5 h-5 text-white" /></div>
                         <div>
                             <h2 className="text-lg font-black text-slate-900 leading-none uppercase tracking-tight">Analytics Dashboard</h2>
                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Biosalud 2.0</p>
                         </div>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-4 bg-slate-50 p-2 rounded-2xl border border-slate-100 shadow-inner">
+                        <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-xl shadow-sm border border-slate-100">
+                            <Building2 className="w-4 h-4 text-indigo-500" />
+                            <select
+                                value={selectedBranch}
+                                onChange={(e) => setSelectedBranch(e.target.value)}
+                                className="bg-transparent text-[10px] font-black text-slate-700 outline-none appearance-none cursor-pointer pr-4 uppercase"
+                            >
+                                <option value="all">TODAS SUCURSALES</option>
+                                <option value="FCIA BIOSALUD">FCIA BIOSALUD</option>
+                                <option value="CHACRAS">CHACRAS PARK</option>
+                            </select>
+                        </div>
+
+                        <div className="flex items-center gap-3 px-4 py-1.5 bg-white rounded-xl shadow-sm border border-slate-100">
+                            <Calendar className="w-4 h-4 text-indigo-500" />
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="date"
+                                    value={startDate}
+                                    onChange={(e) => setStartDate(e.target.value)}
+                                    className="bg-transparent text-[10px] font-black text-slate-700 outline-none uppercase w-28"
+                                />
+                                <span className="text-slate-300 font-black text-xs">/</span>
+                                <input
+                                    type="date"
+                                    value={endDate}
+                                    onChange={(e) => setEndDate(e.target.value)}
+                                    className="bg-transparent text-[10px] font-black text-slate-700 outline-none uppercase w-28"
+                                />
+                            </div>
+                        </div>
+
                         <button onClick={() => window.print()} className="p-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200"><Printer className="w-5 h-5" /></button>
                     </div>
                 </header>
@@ -588,10 +647,6 @@ const App: React.FC = () => {
                                     selectedSeller={selectedSeller}
                                     selectedBranch={selectedBranch}
                                     onSelectBranch={setSelectedBranch}
-                                    startDate={startDate}
-                                    endDate={endDate}
-                                    onStartDateChange={setStartDate}
-                                    onEndDateChange={setEndDate}
                                     onPrintReport={() => setShowReport(true)}
                                     excludedProducts={excludedProducts}
                                     includedProducts={includedProducts}
@@ -601,6 +656,8 @@ const App: React.FC = () => {
                                     includedEntities={includedEntities}
                                     onToggleEntityExclusion={(e) => setExcludedEntities(prev => prev.includes(e) ? prev.filter(x => x !== e) : [...prev, e])}
                                     onToggleEntityInclusion={(e) => setIncludedEntities(prev => prev.includes(e) ? prev.filter(x => x !== e) : [...prev, e])}
+                                    startDate={startDate}
+                                    endDate={endDate}
                                 />
                             )}
                             {activeTab === 'sellers' && (
@@ -609,10 +666,10 @@ const App: React.FC = () => {
                                     sellersList={uniqueSellers}
                                     startDate={startDate}
                                     endDate={endDate}
-                                    excludedProducts={excludedProducts}
-                                    includedProducts={includedProducts}
-                                    excludedEntities={excludedEntities}
-                                    includedEntities={includedEntities}
+                                    onSelectBranch={setSelectedBranch}
+                                    selectedBranch={selectedBranch}
+                                    sellerMappings={sellerMappings}
+                                    onUpdateMappings={handleUpdateSellerMappings}
                                 />
                             )}
                             {activeTab === 'invoices' && (
@@ -621,8 +678,6 @@ const App: React.FC = () => {
                                     salesData={salesData || []}
                                     startDate={startDate}
                                     endDate={endDate}
-                                    onStartDateChange={setStartDate}
-                                    onEndDateChange={setEndDate}
                                     selectedBranch={selectedBranch}
                                     onSelectBranch={setSelectedBranch}
                                     onUpload={handleInvoiceUpload}
@@ -634,8 +689,6 @@ const App: React.FC = () => {
                                     data={expenseData || []}
                                     startDate={startDate}
                                     endDate={endDate}
-                                    onStartDateChange={setStartDate}
-                                    onEndDateChange={setEndDate}
                                     selectedBranch={selectedBranch}
                                     onSelectBranch={setSelectedBranch}
                                     onUpload={handleExpenseUpload}
@@ -649,8 +702,6 @@ const App: React.FC = () => {
                                     data={serviceData || []}
                                     startDate={startDate}
                                     endDate={endDate}
-                                    onStartDateChange={setStartDate}
-                                    onEndDateChange={setEndDate}
                                     selectedBranch={selectedBranch}
                                     onSelectBranch={setSelectedBranch}
                                     onUpload={handleServiceUpload}
@@ -662,6 +713,9 @@ const App: React.FC = () => {
                             {activeTab === 'debts' && (
                                 <CurrentAccountDashboard
                                     data={currentAccountData || []}
+                                    startDate={startDate}
+                                    endDate={endDate}
+                                    selectedBranch={selectedBranch}
                                     onUpload={handleCurrentAccountUpload}
                                     onClear={handleClearCurrentAccount}
                                 />
@@ -671,12 +725,10 @@ const App: React.FC = () => {
                                     data={insuranceData || []}
                                     startDate={startDate}
                                     endDate={endDate}
-                                    onStartDateChange={setStartDate}
-                                    onEndDateChange={setEndDate}
                                     onUploadInsurance={() => { }}
                                 />
                             )}
-                            {activeTab === 'zetti' && <ZettiSync startDate={startDate} endDate={endDate} onDataImported={handleZettiImport} />}
+                            {activeTab === 'zetti' && <ZettiSync startDate={startDate} endDate={endDate} onDataImported={handleZettiImport} sellerMappings={sellerMappings} />}
                             {activeTab === 'shopping' && <ShoppingAssistant salesData={enrichedSalesData || []} stockData={stockData || []} onSelectProduct={(p) => { setActiveTab('sales'); }} />}
                             {activeTab === 'payroll' && (
                                 <PayrollDashboard
@@ -689,6 +741,14 @@ const App: React.FC = () => {
                                     }}
                                 />
                             )}
+                            {activeTab === 'schedules' && (
+                                <SchedulesDashboard
+                                    startDate={startDate}
+                                    endDate={endDate}
+                                    selectedBranch={selectedBranch}
+                                    onSelectBranch={setSelectedBranch}
+                                />
+                            )}
                             {activeTab === 'mixMaestro' && (
                                 <MixMaestroDashboard
                                     data={unifiedFromSales}
@@ -697,8 +757,6 @@ const App: React.FC = () => {
                                     payrollData={payrollData || []}
                                     startDate={startDate}
                                     endDate={endDate}
-                                    onStartDateChange={setStartDate}
-                                    onEndDateChange={setEndDate}
                                     selectedBranch={selectedBranch}
                                     onSelectBranch={setSelectedBranch}
                                 />

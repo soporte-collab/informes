@@ -23,13 +23,28 @@ const saveJsonToStorage = async (data: any, fileName: string): Promise<string> =
 const loadJsonFromStorage = async (fileName: string): Promise<any> => {
   try {
     const storageRef = ref(storage, `${SHARED_PATH_PREFIX}/${fileName}`);
-    const url = await getDownloadURL(storageRef);
-    const response = await fetch(url);
-    if (!response.ok) return [];
+    let url;
+    try {
+      url = await getDownloadURL(storageRef);
+    } catch (error: any) {
+      if (error.code === 'storage/object-not-found') return [];
+      throw error;
+    }
+
+    // Add cache-busting query parameter
+    const response = await fetch(`${url}${url.includes('?') ? '&' : '?'}_t=${Date.now()}`, {
+      cache: 'no-store'
+    });
+
+    if (response.status === 404) return [];
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
     return await response.json();
   } catch (error) {
-    console.warn(`Could not load ${fileName}, it might not exist yet.`);
-    return [];
+    console.error(`Error loading ${fileName}:`, error);
+    // Be careful here: if we return [] it might cause accidental wipes during a merge.
+    // For now we re-throw to block the save operation if load fails.
+    throw error;
   }
 };
 
@@ -326,6 +341,37 @@ export const getAllSpecialPermitsFromDB = async (): Promise<SpecialPermit[]> => 
   return Array.isArray(data) ? data : [];
 };
 
+export const saveTimeBankToDB = async (records: any[]): Promise<void> => {
+  await saveJsonToStorage(records, 'time_bank.json');
+};
+
+export const getAllTimeBankFromDB = async (): Promise<any[]> => {
+  const data = await loadJsonFromStorage('time_bank.json');
+  return Array.isArray(data) ? data : [];
+};
+
+// --- SELLER MAPPING FUNCTIONS ---
+
+export const saveSellerMappingsToDB = async (mappings: Record<string, string>): Promise<void> => {
+  await saveJsonToStorage(mappings, 'seller_mappings.json');
+};
+
+export const getAllSellerMappingsFromDB = async (): Promise<Record<string, string>> => {
+  const data = await loadJsonFromStorage('seller_mappings.json');
+  return (data && typeof data === 'object' && !Array.isArray(data)) ? data : {};
+};
+
+// --- EMPLOYEE MAPPING FUNCTIONS ---
+
+export const saveEmployeeMappingsToDB = async (mappings: Record<string, string>): Promise<void> => {
+  await saveJsonToStorage(mappings, 'employee_mappings.json');
+};
+
+export const getAllEmployeeMappingsFromDB = async (): Promise<Record<string, string>> => {
+  const data = await loadJsonFromStorage('employee_mappings.json');
+  return (data && typeof data === 'object' && !Array.isArray(data)) ? data : {};
+};
+
 // --- GENERAL UTILS ---
 
 export const clearDB = async (): Promise<void> => {
@@ -391,6 +437,13 @@ export const clearInsuranceDB = async () => {
     const fileRef = ref(storage, `${SHARED_PATH_PREFIX}/insurance.json`);
     await deleteObject(fileRef);
   } catch (e) { console.error("Error al borrar seguros/obras sociales:", e); }
+};
+
+export const clearAttendanceDB = async () => {
+  try {
+    const fileRef = ref(storage, `${SHARED_PATH_PREFIX}/attendance.json`);
+    await deleteObject(fileRef);
+  } catch (e) { console.error("Error al borrar asistencias:", e); }
 };
 
 export const clearStockDB = async () => {

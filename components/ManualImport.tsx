@@ -29,9 +29,24 @@ export const ManualImport: React.FC<ManualImportProps> = ({ onImported }) => {
             let message = "";
             let count = 0;
 
-            if (data.GLOBAL && Array.isArray(data.GLOBAL)) {
+            let combinedRecords: any[] = [];
+
+            // Check for multiple possible keys (GLOBAL, PASEO, CHACRAS)
+            const keysToProcess = ['GLOBAL', 'PASEO', 'CHACRAS'];
+            keysToProcess.forEach(key => {
+                if (data[key] && Array.isArray(data[key])) {
+                    // Tag records with their source key to handle missing branch info
+                    const tagged = data[key].map((r: any) => ({
+                        ...r,
+                        _sourceKey: key
+                    }));
+                    combinedRecords = [...combinedRecords, ...tagged];
+                }
+            });
+
+            if (combinedRecords.length > 0) {
                 // Map to records usable by the dashboard (Current Accounts)
-                const mapped = data.GLOBAL.map((r: any, idx: number) => {
+                const mapped = combinedRecords.map((r: any, idx: number) => {
                     const isNC = String(r.type || '').toUpperCase().includes('NC') ||
                         String(r.reference || '').toUpperCase().includes('NC');
 
@@ -44,17 +59,29 @@ export const ManualImport: React.FC<ManualImportProps> = ({ onImported }) => {
                         d = 0;
                     }
 
+                    // Handle date parsing (DD/MM/YYYY)
+                    let parsedDate = new Date();
+                    if (r.date && typeof r.date === 'string' && r.date.includes('/')) {
+                        const parts = r.date.split('/');
+                        if (parts.length === 3) {
+                            parsedDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+                        }
+                    } else if (r.date) {
+                        parsedDate = new Date(r.date);
+                    }
+
                     return {
-                        id: r.id || `MANUAL-${idx}`,
+                        id: r.id || `MANUAL-${r._sourceKey || 'G'}-${idx}`,
                         entity: r.entity,
-                        date: new Date(r.date.split('/').reverse().join('-')), // DD/MM/YYYY -> YYYY-MM-DD
+                        date: parsedDate,
                         type: r.type,
                         debit: d,
                         credit: c,
                         balance: d - c,
                         reference: r.reference,
-                        branch: r.branch,
-                        description: `Sincronizado via PDF (${r.status || 'S/E'})`
+                        // Determine branch, prioritize existing field then source key
+                        branch: r.branch || (r._sourceKey === 'PASEO' ? 'FCIA BIOSALUD' : r._sourceKey === 'CHACRAS' ? 'CHACRAS PARK' : 'GLOBAL'),
+                        description: `Sincronizado vía PDF (${r.status || 'S/E'})`
                     };
                 });
 

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { CurrentAccountRecord } from '../types';
 import { formatMoney } from '../utils/dataHelpers';
 import {
@@ -6,61 +6,118 @@ import {
     Calendar, User, Filter, Info,
     AlertCircle, CheckCircle, Clock, LayoutGrid, Store, Trash2, Printer
 } from 'lucide-react';
-import { format, isWithinInterval } from 'date-fns';
+import { format, isWithinInterval, addDays, isPast } from 'date-fns';
 import { PrintCurrentAccountReport } from './PrintCurrentAccountReport';
 
 interface Props {
     data: CurrentAccountRecord[];
+    startDate: string;
+    endDate: string;
+    selectedBranch: string;
     onUpload?: (e: React.ChangeEvent<HTMLInputElement>) => void;
     onClear?: () => void;
 }
 
-export const CurrentAccountDashboard: React.FC<Props> = ({ data, onUpload, onClear }) => {
+export const CurrentAccountDashboard: React.FC<Props> = ({
+    data,
+    startDate: globalStartDate,
+    endDate: globalEndDate,
+    selectedBranch: globalBranch,
+    onUpload,
+    onClear
+}) => {
     const [viewTab, setViewTab] = useState<'global' | 'paseo' | 'chacras'>('global');
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedEntity, setSelectedEntity] = useState('all');
-    const [startDate, setStartDate] = useState('');
-    const [endDate, setEndDate] = useState('');
     const [showPrintModal, setShowPrintModal] = useState(false);
+
+    // Sync viewTab with globalBranch if it's not 'all'
+    useEffect(() => {
+        if (globalBranch === 'FCIA BIOSALUD') setViewTab('paseo');
+        else if (globalBranch.includes('CHACRAS')) setViewTab('chacras');
+        else setViewTab('global');
+    }, [globalBranch]);
+
+    const [statusFilter, setStatusFilter] = useState<'all' | 'vencidos' | 'proximos'>('all');
+    const today = new Date();
 
     // Filter by branch based on tab
     const branchFilteredData = useMemo(() => {
         if (viewTab === 'global') return data;
-        const branchKey = viewTab === 'paseo' ? 'FCIA BIOSALUD' : 'BIOSALUD CHACRAS PARK';
-        return data.filter(d => d.branch === branchKey);
+
+        return data.filter(d => {
+            const branch = (d.branch || '').toUpperCase();
+            if (viewTab === 'paseo') {
+                return branch.includes('BIO') || branch.includes('PASEO');
+            }
+            if (viewTab === 'chacras') {
+                return branch.includes('CHACRAS');
+            }
+            return true;
+        });
     }, [data, viewTab]);
 
-    const entities = useMemo(() => {
-        return Array.from(new Set((branchFilteredData || []).map(d => d.entity))).filter(Boolean).sort();
+    const enrichedData = useMemo(() => {
+        return (branchFilteredData || []).map(record => {
+            const recordDate = record.date instanceof Date ? record.date : new Date(record.date);
+            const dueDate = addDays(recordDate, 30);
+
+            // Only invoices (debits) can expire
+            const isInvoice = record.debit > 0;
+            const isExpired = isInvoice && isPast(dueDate) && record.balance > 0;
+
+            // Soon to expire: expires in the next 30 days
+            const nextMonth = addDays(today, 30);
+            const isSoon = isInvoice && !isExpired && record.balance > 0 &&
+                dueDate >= today && dueDate <= nextMonth;
+
+            return {
+                ...record,
+                dueDate,
+                isExpired,
+                isSoon
+            };
+        });
     }, [branchFilteredData]);
 
+    const entities = useMemo(() => {
+        return Array.from(new Set(enrichedData.map(d => d.entity))).filter(Boolean).sort();
+    }, [enrichedData]);
+
     const filteredData = useMemo(() => {
-        return (branchFilteredData || []).filter(d => {
+        return enrichedData.filter(d => {
             const searchStr = `${d.entity || ''} ${d.reference || ''} ${d.description || ''}`.toLowerCase();
             const matchSearch = searchTerm === '' || searchStr.includes(searchTerm.toLowerCase());
             const matchEntity = selectedEntity === 'all' || d.entity === selectedEntity;
 
+            let matchStatus = true;
+            if (statusFilter === 'vencidos') matchStatus = d.isExpired;
+            if (statusFilter === 'proximos') matchStatus = d.isSoon;
+
             let matchDate = true;
-            if (startDate && endDate) {
+            if (globalStartDate && globalEndDate) {
                 try {
                     const recordDate = d.date instanceof Date ? d.date : new Date(d.date);
-                    const start = new Date(startDate);
-                    const end = new Date(endDate);
+                    const start = new Date(globalStartDate);
+                    const end = new Date(globalEndDate);
                     end.setHours(23, 59, 59);
                     matchDate = isWithinInterval(recordDate, { start, end });
                 } catch (e) { matchDate = true; }
             }
 
-            return matchSearch && matchEntity && matchDate;
+            return matchSearch && matchEntity && matchDate && matchStatus;
         });
-    }, [branchFilteredData, searchTerm, selectedEntity, startDate, endDate]);
+    }, [enrichedData, searchTerm, selectedEntity, globalStartDate, globalEndDate, statusFilter]);
 
     const stats = useMemo(() => {
-        const totalDebits = filteredData.reduce((acc, curr) => acc + (curr.debit || 0), 0);
-        const totalCredits = filteredData.reduce((acc, curr) => acc + (curr.credit || 0), 0);
+        const totalDebits = enrichedData.reduce((acc, curr) => acc + (curr.debit || 0), 0);
+        const totalCredits = enrichedData.reduce((acc, curr) => acc + (curr.credit || 0), 0);
+        const expiredAmount = enrichedData.filter(d => d.isExpired).reduce((acc, curr) => acc + (curr.balance || 0), 0);
+        const soonAmount = enrichedData.filter(d => d.isSoon).reduce((acc, curr) => acc + (curr.balance || 0), 0);
         const finalBalance = totalDebits - totalCredits;
-        return { totalDebits, totalCredits, finalBalance };
-    }, [filteredData]);
+
+        return { totalDebits, totalCredits, finalBalance, expiredAmount, soonAmount };
+    }, [enrichedData]);
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
@@ -86,7 +143,7 @@ export const CurrentAccountDashboard: React.FC<Props> = ({ data, onUpload, onCle
                 </button>
             </div>
 
-            {/* Stats Cards */}
+            {/* Main Stats Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-xl relative overflow-hidden group">
                     <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:rotate-12 transition-transform duration-500">
@@ -123,6 +180,51 @@ export const CurrentAccountDashboard: React.FC<Props> = ({ data, onUpload, onCle
                 </div>
             </div>
 
+            {/* Expiration Status Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <button
+                    onClick={() => setStatusFilter(statusFilter === 'vencidos' ? 'all' : 'vencidos')}
+                    className={`p-6 rounded-[32px] border transition-all duration-300 text-left relative overflow-hidden group ${statusFilter === 'vencidos' ? 'bg-rose-600 border-rose-500 shadow-xl shadow-rose-200 ring-4 ring-rose-100' : 'bg-white border-rose-100 shadow-lg hover:shadow-rose-100'}`}
+                >
+                    <div className="flex items-center gap-4 mb-2">
+                        <div className={`p-2 rounded-xl ${statusFilter === 'vencidos' ? 'bg-white/20' : 'bg-rose-50'}`}>
+                            <AlertCircle className={`w-5 h-5 ${statusFilter === 'vencidos' ? 'text-white' : 'text-rose-600'}`} />
+                        </div>
+                        <div>
+                            <p className={`${statusFilter === 'vencidos' ? 'text-rose-100' : 'text-slate-400'} text-[10px] font-black uppercase tracking-widest`}>Facturas Vencidas</p>
+                            <h3 className={`${statusFilter === 'vencidos' ? 'text-white' : 'text-slate-900'} text-2xl font-black`}>{formatMoney(stats.expiredAmount)}</h3>
+                        </div>
+                    </div>
+                    <p className={`${statusFilter === 'vencidos' ? 'text-white/70' : 'text-slate-400'} text-[9px] font-bold uppercase`}>
+                        Monto total que ha superado los 30 días de plazo
+                    </p>
+                    {statusFilter === 'vencidos' && (
+                        <div className="absolute top-4 right-4 bg-white/20 text-white text-[8px] font-black py-1 px-3 rounded-full">FILTRANDO</div>
+                    )}
+                </button>
+
+                <button
+                    onClick={() => setStatusFilter(statusFilter === 'proximos' ? 'all' : 'proximos')}
+                    className={`p-6 rounded-[32px] border transition-all duration-300 text-left relative overflow-hidden group ${statusFilter === 'proximos' ? 'bg-amber-600 border-amber-500 shadow-xl shadow-amber-200 ring-4 ring-amber-100' : 'bg-white border-amber-100 shadow-lg hover:shadow-amber-100'}`}
+                >
+                    <div className="flex items-center gap-4 mb-2">
+                        <div className={`p-2 rounded-xl ${statusFilter === 'proximos' ? 'bg-white/20' : 'bg-amber-50'}`}>
+                            <Clock className={`w-5 h-5 ${statusFilter === 'proximos' ? 'text-white' : 'text-amber-600'}`} />
+                        </div>
+                        <div>
+                            <p className={`${statusFilter === 'proximos' ? 'text-amber-100' : 'text-slate-400'} text-[10px] font-black uppercase tracking-widest`}>Próximos Vencimientos</p>
+                            <h3 className={`${statusFilter === 'proximos' ? 'text-white' : 'text-slate-900'} text-2xl font-black`}>{formatMoney(stats.soonAmount)}</h3>
+                        </div>
+                    </div>
+                    <p className={`${statusFilter === 'proximos' ? 'text-white/70' : 'text-slate-400'} text-[9px] font-bold uppercase`}>
+                        Vencen en los próximos 30 días calendario
+                    </p>
+                    {statusFilter === 'proximos' && (
+                        <div className="absolute top-4 right-4 bg-white/20 text-white text-[8px] font-black py-1 px-3 rounded-full">FILTRANDO</div>
+                    )}
+                </button>
+            </div>
+
             {/* Filters Bar */}
             <div className="bg-white p-4 rounded-[28px] border border-slate-100 shadow-lg flex flex-wrap gap-4 items-center">
                 <div className="relative flex-1 min-w-[240px]">
@@ -143,11 +245,9 @@ export const CurrentAccountDashboard: React.FC<Props> = ({ data, onUpload, onCle
                     <option value="all">TODOS LOS CLIENTES</option>
                     {entities.map(e => <option key={e} value={e}>{e}</option>)}
                 </select>
-                <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 rounded-2xl border border-slate-100">
-                    <Calendar className="w-4 h-4 text-indigo-500" />
-                    <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="bg-transparent text-[10px] font-black outline-none" />
-                    <span className="text-slate-300">/</span>
-                    <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="bg-transparent text-[10px] font-black outline-none" />
+                <div className="flex items-center gap-2 px-4 py-2 bg-slate-50 rounded-2xl border border-slate-100 opacity-50 cursor-not-allowed">
+                    <Calendar className="w-4 h-4 text-slate-400" />
+                    <span className="text-[10px] font-black uppercase">{globalStartDate} / {globalEndDate}</span>
                 </div>
             </div>
 

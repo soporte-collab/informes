@@ -153,19 +153,35 @@ Estas reglas son de cumplimiento OBLIGATORIO para evitar discrepancias:
     - **Fichadas Reales** (Reloj de control).
     - **Ventas Zetti**: Detecta anomalías (vendedor vendió sin fichar o viceversa) con alertas visuales.
     - **Cómputo de Horas**: Cálculo automático de horas trabajadas y **Horas Extras** (umbral de 45hs semanales).
-- **Importación Inteligente**: El motor de carga de XLS ahora es "omnipresente": escanea cada celda para vincular nombres, alias de Zetti o CUILs, permitiendo procesar archivos complejos de diferentes sucursales simultáneamente.
-- **Gestión de Ausentismo**: Se añadieron formularios para cargar Licencias (Vacaciones, Médicas) y Permisos especiales por horas.
+- **Importación Inteligente**: 
+    - Auto-puntuación de delimitadores (CSV, CSV-Excel) para importar cualquier formato (`handleAttendanceImport`).
+    - Detección automática de Sucursal por nombre de archivo.
+    - IDs únicos compuestos `empId-date-branch` para soportar múltiples marcas diarias en distintas sucursales.
+- **Gestión Visual de Identidad**: Vinculación manual rápida para empleados con nombres variables ("ALONSO, SILVIA" vs "SILVIA ALONZO").
+- **Reset "Zona de Peligro"**: Botón para limpiar toda la base de asistencias en caso de corrupción masiva.
 
-### 10. Finanzas: Lógica de Notas de Crédito (NC)
+### 10. Gestión Integral de Tiempo: Bitácora y Banco de Horas (04 de Feb, 2026)
+- **Bitácora Interactiva**: Al hacer clic en un empleado, se abre un calendario detallado (modal) con acciones por día.
+- **Herramientas de Gestión Manual**:
+    - **Carga Manual (Reloj)**: Permite ingresar horas trabajadas si el empleado olvidó fichar (entrada/salida).
+    - **Licencias y Permisos (Maletín)**: Carga de vacaciones, carpeta médica o permisos por horas (ej: trámite de 9 a 11).
+    - **Banco de Horas (Retorno)**: Sistema de deuda/crédito.
+        - **DEUDA (Rojo)**: Se cargan horas negativas cuando el empleado debe tiempo (ej: día personal).
+        - **CRÉDITO (Verde)**: Se cargan horas positivas cuando el empleado devuelve el tiempo adeudado.
+        - **Saldo en Vivo**: Indicador visual en la cabecera del calendario mostrando el balance total de horas (+/-).
+- **Lógica de Feriados Mejorada**: Los feriados ahora **restan** del objetivo de horas mensual. Si se trabaja un feriado, cuenta 100% como extra, solucionando el problema de cálculo de objetivos.
+- **Mapeo Proactivo**: Botón "Vincular Nuevo Alias" para crear relaciones de nombres antes de importar archivos, previniendo registros "Desconocidos".
+
+### 11. Finanzas: Lógica de Notas de Crédito (NC)
 - **Problema**: El sistema trataba las NC como deuda (Debe), inflando el saldo negativo.
 - **Corrección**: Se ajustó `dataHelpers.ts` y el importador de JSON. Cualquier comprobante identificado como "NC", "CRÉDITO" o "ANULACIÓN" se asigna automáticamente al **Haber**, restando de la deuda total.
 
-### 11. Herramientas de Automatización (Python)
+### 12. Herramientas de Automatización (Python)
 - **`extract_employees.py`**: Script para raspar nombres y CUILs de archivos XLS binarios antiguos para crear legajos automáticamente. Resuelve el caso de formatos mezclados (ej. "Enrique Ferrer" sin coma).
 - **`process_cc_pdfs.py`**: Procesador robusto basado en **PyMuPDF** para leer reportes "Detallados" de Zetti. Maneja bloques multilínea para vincular identidad del cliente con sus movimientos financieros.
 
-### 12. Optimización de Reportes (Impresión)
+### 13. Optimización de Reportes (Impresión)
 - **Fix "Página en Blanco"**: Se detectó que las animaciones de Tailwind (`animate-in`, `fade-in`) bloqueaban la captura del PDF en el navegador. Se crearon reglas `@media print` para forzar opacidad 100% y eliminar transiciones, garantizando reportes de Deuda claros y en formato A4.
 
 ---
-*Última actualización: 04 de Febrero, 2026 - 12:35hs*
+*Última actualización: 04 de Febrero, 2026 - 18:55hs*

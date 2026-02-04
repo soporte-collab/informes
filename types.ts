@@ -295,6 +295,7 @@ export interface TimeAttendanceRecord {
   employeeId: string;
   employeeName: string;
   date: string;
+  branch?: string;
   entrance1?: string;
   exit1?: string;
   entrance2?: string;
@@ -326,6 +327,15 @@ export interface SpecialPermit {
   fromTime: string;
   toTime: string;
   reason: string;
+}
+
+export interface TimeBankRecord {
+  id: string;
+  employeeId: string;
+  date: string;
+  hours: number; // Positive = returned/extra, Negative = owed/taken
+  reason: string;
+  type: 'debt' | 'credit';
 }
 
 export interface HolidayRecord {

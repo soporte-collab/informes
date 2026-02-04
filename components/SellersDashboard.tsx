@@ -3,9 +3,9 @@ import { SaleRecord } from '../types';
 import { formatMoney } from '../utils/dataHelpers';
 import {
     Users, TrendingUp, ShoppingBag, DollarSign, Award,
-    ArrowRightLeft, User, BarChart3, Target, Zap
+    ArrowRightLeft, User, BarChart3, Target, Zap, X, Trash2
 } from 'lucide-react';
-// Recharts purged
+
 const ResponsiveContainer = ({ children }: any) => <div className="h-full w-full bg-gray-50 rounded-2xl flex items-center justify-center text-[10px] text-gray-400 font-bold uppercase border-2 border-dashed border-gray-100">Gráfico Desactivado</div>;
 const BarChart = ({ children }: any) => <div>{children}</div>;
 const Bar = () => null;
@@ -13,17 +13,12 @@ const XAxis = () => null;
 const YAxis = () => null;
 const CartesianGrid = () => null;
 const Tooltip = () => null;
-const PieChart = ({ children }: any) => <div>{children}</div>;
-const Pie = () => null;
-const Cell = () => null;
-const Legend = () => null;
 const RadarChart = ({ children }: any) => <div>{children}</div>;
 const PolarGrid = () => null;
 const PolarAngleAxis = () => null;
 const RechartRadar = () => null;
-const PolarRadiusAxis = () => null;
 const ComposedChart = ({ children }: any) => <div>{children}</div>;
-const Line = () => null;
+
 import { LiveSellersLeaderboard } from './LiveSellersLeaderboard';
 import { SellerDetail } from './SellerDetail';
 
@@ -32,12 +27,10 @@ interface SellersDashboardProps {
     sellersList: string[];
     startDate: string;
     endDate: string;
-    excludedProducts: string[];
-    includedProducts: string[];
-    excludedEntities: string[];
-    includedEntities: string[];
     onSelectBranch: (branch: string) => void;
     selectedBranch: string;
+    sellerMappings?: Record<string, string>;
+    onUpdateMappings?: (mappings: Record<string, string>) => void;
 }
 
 export const SellersDashboard: React.FC<SellersDashboardProps> = ({
@@ -45,39 +38,20 @@ export const SellersDashboard: React.FC<SellersDashboardProps> = ({
     sellersList,
     startDate,
     endDate,
-    excludedProducts,
-    includedProducts,
-    excludedEntities,
-    includedEntities,
     onSelectBranch,
-    selectedBranch
+    selectedBranch,
+    sellerMappings = {},
+    onUpdateMappings
 }) => {
     const [selectedSeller, setSelectedSeller] = useState<string | null>(null);
     const [compareSellerA, setCompareSellerA] = useState<string>('');
     const [compareSellerB, setCompareSellerB] = useState<string>('');
+    const [showMappingModal, setShowMappingModal] = useState(false);
 
     // Filtered data for general analytics (respecting global filters)
     const filteredData = useMemo(() => {
-        return (data || []).filter(d => {
-            // Safe guards
-            const pName = d.productName || '';
-            const branchName = d.branch || ''; // Ensure string
-            const currentEntity = d.entity || "Particular";
-
-            let productMatch = true;
-            if (includedProducts.length > 0) productMatch = includedProducts.includes(pName);
-            else productMatch = !excludedProducts.includes(pName);
-
-            let entityMatch = true;
-            if (includedEntities.length > 0) entityMatch = includedEntities.includes(currentEntity);
-            else entityMatch = !excludedEntities.includes(currentEntity);
-
-            const selBranchLower = (selectedBranch || 'all').toLowerCase();
-            const matchBranch = selBranchLower === 'all' || branchName.toLowerCase().includes(selBranchLower);
-
-            return productMatch && entityMatch && matchBranch;
-        });
-    }, [data, includedProducts, excludedProducts, includedEntities, excludedEntities, selectedBranch]);
+        return (data || []);
+    }, [data]);
 
     // Comparison Logic
     const comparisonData = useMemo(() => {
@@ -104,23 +78,6 @@ export const SellersDashboard: React.FC<SellersDashboardProps> = ({
         };
     }, [filteredData, compareSellerA, compareSellerB]);
 
-    const chartData = useMemo(() => {
-        if (!comparisonData) return [];
-        return [
-            {
-                metric: 'Facturación ($)',
-                [comparisonData.a.name]: comparisonData.a.revenue,
-                [comparisonData.b.name]: comparisonData.b.revenue,
-                fullMetric: 'Revenue'
-            },
-            {
-                metric: 'Tickets (Cant.)',
-                [comparisonData.a.name]: comparisonData.a.tickets * 1000, // Scale for demo
-                fullMetric: 'Tickets'
-            }
-        ];
-    }, [comparisonData]);
-
     if (selectedSeller) {
         return (
             <SellerDetail
@@ -129,10 +86,10 @@ export const SellersDashboard: React.FC<SellersDashboardProps> = ({
                 onBack={() => setSelectedSeller(null)}
                 startDate={startDate}
                 endDate={endDate}
-                excludedProducts={excludedProducts}
-                includedProducts={includedProducts}
-                excludedEntities={excludedEntities}
-                includedEntities={includedEntities}
+                excludedProducts={[]}
+                includedProducts={[]}
+                excludedEntities={[]}
+                includedEntities={[]}
             />
         );
     }
@@ -151,19 +108,14 @@ export const SellersDashboard: React.FC<SellersDashboardProps> = ({
                     </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-3 bg-slate-50 p-2 rounded-2xl border border-slate-100 shadow-inner">
-                    <div className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-xl shadow-sm border border-slate-100">
-                        <Award className="w-4 h-4 text-indigo-500" />
-                        <select
-                            value={selectedBranch}
-                            onChange={(e) => onSelectBranch(e.target.value)}
-                            className="bg-transparent text-xs font-black text-slate-700 outline-none appearance-none cursor-pointer pr-4 uppercase"
-                        >
-                            <option value="all">TODAS SUCURSALES</option>
-                            <option value="FCIA BIOSALUD">FCIA BIOSALUD</option>
-                            <option value="CHACRAS">CHACRAS PARK</option>
-                        </select>
-                    </div>
+                <div className="flex flex-wrap items-center gap-3">
+                    <button
+                        onClick={() => setShowMappingModal(true)}
+                        className="flex items-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-xl"
+                    >
+                        <Zap className="w-4 h-4 text-amber-400 fill-amber-400" />
+                        Vincular Alias Zetti
+                    </button>
                 </div>
             </div>
 
@@ -310,6 +262,90 @@ export const SellersDashboard: React.FC<SellersDashboardProps> = ({
                     </div>
                 </div>
             </div>
+
+            {/* Mapping Modal */}
+            {showMappingModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+                    <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[85vh]">
+                        <div className="bg-slate-900 p-8 text-white flex justify-between items-center">
+                            <div>
+                                <h3 className="text-2xl font-black uppercase tracking-tighter">Vinculación de Alias</h3>
+                                <p className="text-slate-400 text-xs font-bold uppercase">Maestro de Vendedores Zetti → RRHH</p>
+                            </div>
+                            <button onClick={() => setShowMappingModal(false)} className="p-2 hover:bg-white/10 rounded-full transition-colors"><X className="w-6 h-6" /></button>
+                        </div>
+                        <div className="p-8 overflow-y-auto space-y-6">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="p-6 bg-amber-50 rounded-3xl border border-amber-100 col-span-2">
+                                    <p className="text-[10px] font-black text-amber-700 uppercase leading-relaxed">
+                                        Asigne un nombre de visualización (o nombre real de empleado) a los alias que devuelve Zetti.
+                                        Esto unificará los datos en todos los módulos de RRHH y Rendimiento.
+                                    </p>
+                                </div>
+
+                                <div className="bg-slate-50 p-4 rounded-2xl space-y-4">
+                                    <h4 className="text-[10px] font-black text-slate-400 uppercase">Nuevo Vínculo</h4>
+                                    <input
+                                        type="text"
+                                        placeholder="Alias en Zetti (ej: ALE_V)"
+                                        className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-xs font-bold outline-none uppercase"
+                                        id="zetti-alias"
+                                    />
+                                    <input
+                                        type="text"
+                                        placeholder="Nombre Visible (ej: Alexis)"
+                                        className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-xs font-bold outline-none uppercase"
+                                        id="mapped-name"
+                                    />
+                                    <button
+                                        onClick={() => {
+                                            const aliasInput = document.getElementById('zetti-alias') as HTMLInputElement;
+                                            const nameInput = document.getElementById('mapped-name') as HTMLInputElement;
+                                            const alias = aliasInput.value.toUpperCase();
+                                            const name = nameInput.value;
+                                            if (alias && name && onUpdateMappings) {
+                                                onUpdateMappings({ ...sellerMappings, [alias]: name });
+                                                aliasInput.value = '';
+                                                nameInput.value = '';
+                                            }
+                                        }}
+                                        className="w-full bg-indigo-600 text-white py-2 rounded-xl text-[10px] font-black uppercase tracking-widest"
+                                    >
+                                        Vincular Vendedor
+                                    </button>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <h4 className="text-[10px] font-black text-slate-400 uppercase">Vínculos Activos</h4>
+                                    <div className="max-h-[250px] overflow-y-auto space-y-2 pr-2">
+                                        {Object.entries(sellerMappings).map(([alias, name]) => (
+                                            <div key={alias} className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-xl group">
+                                                <div>
+                                                    <p className="text-[10px] font-black text-slate-400 uppercase">{alias}</p>
+                                                    <p className="text-xs font-bold text-slate-800 uppercase">{name}</p>
+                                                </div>
+                                                <button
+                                                    onClick={() => {
+                                                        const newMappings = { ...sellerMappings };
+                                                        delete newMappings[alias];
+                                                        if (onUpdateMappings) onUpdateMappings(newMappings);
+                                                    }}
+                                                    className="p-2 text-slate-300 hover:text-rose-500 transition-colors"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        ))}
+                                        {Object.keys(sellerMappings).length === 0 && (
+                                            <p className="text-center py-8 text-slate-300 text-[10px] font-bold uppercase italic">No hay vinculaciones creadas</p>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

@@ -37,8 +37,6 @@ interface DashboardProps {
     onSelectBranch: (branch: string) => void;
     startDate: string;
     endDate: string;
-    onStartDateChange: (date: string) => void;
-    onEndDateChange: (date: string) => void;
     excludedProducts: string[];
     includedProducts: string[];
     onToggleExclusion: (productName: string) => void;
@@ -62,8 +60,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
     onSelectBranch,
     startDate,
     endDate,
-    onStartDateChange,
-    onEndDateChange,
     excludedProducts,
     includedProducts,
     onToggleExclusion,
@@ -92,12 +88,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
     const timeInputRef = useRef<HTMLInputElement>(null);
 
-    // Extract unique months for the filter dropdown
-    const availableMonths = useMemo(() => {
-        const months = new Set((data || []).map(d => d.monthYear));
-        return Array.from(months).sort().reverse();
-    }, [data]);
-
     // Extract unique products
     const allProducts = useMemo(() => {
         const products = new Set((data || []).map(d => d.productName));
@@ -110,53 +100,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
         return Array.from(entities).filter(e => e).sort();
     }, [data]);
 
-    const handleQuickMonthSelect = (monthStr: string) => {
-        if (monthStr === 'all') {
-            onStartDateChange('');
-            onEndDateChange('');
-            return;
-        }
-        const parts = (monthStr || "").split('-');
-        if (parts.length === 2) {
-            const year = Number(parts[0]);
-            const month = Number(parts[1]);
-            const firstDay = new Date(year, month - 1, 1);
-            const lastDay = new Date(year, month, 0);
-
-            onStartDateChange(format(firstDay, 'yyyy-MM-dd'));
-            onEndDateChange(format(lastDay, 'yyyy-MM-dd'));
-        }
-    };
-
-    const currentMonthValue = useMemo(() => {
-        if (!startDate || !endDate) return 'all';
-        const start = new Date(startDate + 'T00:00:00');
-        const end = new Date(endDate + 'T23:59:59');
-        if (start.getDate() === 1) {
-            const nextDay = new Date(end);
-            nextDay.setDate(nextDay.getDate() + 1);
-            if (nextDay.getDate() === 1 && start.getMonth() === end.getMonth()) {
-                return format(start, 'yyyy-MM');
-            }
-        }
-        return 'custom';
-    }, [startDate, endDate]);
 
     // Filter data
     const filteredData = useMemo(() => {
         return (data || []).filter(d => {
-            const matchBranch = selectedBranch === 'all' || d.branch.toLowerCase().includes(selectedBranch.toLowerCase());
-
-            let matchDate = true;
-            if (startDate) {
-                const start = new Date(startDate + 'T00:00:00');
-                if (d.date < start) matchDate = false;
-            }
-            if (matchDate && endDate) {
-                const end = new Date(endDate + 'T23:59:59');
-                if (d.date > end) matchDate = false;
-            }
-
             let productMatch = true;
             if (includedProducts.length > 0) {
                 productMatch = includedProducts.includes(d.productName);
@@ -172,9 +119,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 entityMatch = !excludedEntities.includes(currentEntity);
             }
 
-            return matchBranch && matchDate && productMatch && entityMatch;
+            return productMatch && entityMatch;
         });
-    }, [data, selectedBranch, startDate, endDate, excludedProducts, includedProducts, excludedEntities, includedEntities]);
+    }, [data, excludedProducts, includedProducts, excludedEntities, includedEntities]);
 
     // Aggregated Stats
     const stats = useMemo(() => {
@@ -882,68 +829,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 />
             )}
 
-            <div className="flex flex-wrap items-center gap-3 bg-white/50 backdrop-blur-md p-4 rounded-[30px] border border-white shadow-xl">
-                <div className="flex items-center gap-2 px-4 py-2 bg-white rounded-2xl shadow-sm border border-slate-100">
-                    <Calendar className="w-4 h-4 text-indigo-500" />
-                    <input
-                        type="date"
-                        value={startDate}
-                        onChange={(e) => onStartDateChange(e.target.value)}
-                        className="bg-transparent text-xs font-black text-slate-700 outline-none uppercase"
-                    />
-                    <span className="text-slate-300 font-bold">/</span>
-                    <input
-                        type="date"
-                        value={endDate}
-                        onChange={(e) => onEndDateChange(e.target.value)}
-                        className="bg-transparent text-xs font-black text-slate-700 outline-none uppercase"
-                    />
-                </div>
-
-                <div className="flex items-center gap-2 px-4 py-2 bg-white rounded-2xl shadow-sm border border-slate-100">
-                    <HardDrive className="w-4 h-4 text-indigo-500" />
-                    <select
-                        value={selectedBranch}
-                        onChange={(e) => onSelectBranch(e.target.value)}
-                        className="bg-transparent text-xs font-black text-slate-700 outline-none appearance-none cursor-pointer pr-4"
-                    >
-                        <option value="all">TODAS SUCURSALES</option>
-                        <option value="FCIA BIOSALUD">FCIA BIOSALUD</option>
-                        <option value="CHACRAS">CHACRAS PARK</option>
-                    </select>
-                </div>
-
-                <div className="w-px h-6 bg-slate-200 mx-2"></div>
-
-                <button
-                    onClick={() => setIsFilterOpen(true)}
-                    className={`flex items-center gap-2 px-6 py-2.5 rounded-[20px] border transition-all font-black text-[10px] uppercase tracking-widest ${includedProducts.length > 0 || excludedProducts.length > 0
-                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-200'
-                        : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-500 hover:shadow-md'}`}
-                >
-                    <Package className="w-4 h-4" />
-                    Productos {includedProducts.length > 0 && `(${includedProducts.length})`}
-                </button>
-
-                <button
-                    onClick={() => setIsEntityFilterOpen(true)}
-                    className={`flex items-center gap-2 px-6 py-2.5 rounded-[20px] border transition-all font-black text-[10px] uppercase tracking-widest ${includedEntities.length > 0 || excludedEntities.length > 0
-                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-200'
-                        : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-500 hover:shadow-md'}`}
-                >
-                    <ShoppingCart className="w-4 h-4" />
-                    Entidades {includedEntities.length > 0 && `(${includedEntities.length})`}
-                </button>
-
-                <div className="flex-1"></div>
-
-                <button
-                    onClick={() => window.print()}
-                    className="p-2.5 bg-slate-900 text-white rounded-2xl hover:bg-slate-800 transition-all shadow-lg"
-                >
-                    <Printer className="w-5 h-5" />
-                </button>
-            </div>
 
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 no-print">
