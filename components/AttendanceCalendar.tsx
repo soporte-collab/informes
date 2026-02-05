@@ -1,7 +1,8 @@
 import React, { useMemo } from 'react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, getDay, isWeekend, addMinutes, parse } from 'date-fns';
 import { TimeAttendanceRecord, EmployeeLicense, SaleRecord, HolidayRecord, SpecialPermit, TimeBankRecord } from '../types';
-import { Clock, AlertCircle, CheckCircle, Calendar as CalendarIcon, Briefcase, Sun, Coffee, Plus, Minus, RotateCcw, X, History, ChevronLeft } from 'lucide-react';
+import { Clock, AlertCircle, CheckCircle, Calendar as CalendarIcon, Briefcase, Sun, Coffee, Plus, Minus, RotateCcw, X, History, ChevronLeft, Trash2, Edit2 } from 'lucide-react';
+import { formatMinutesToHM } from '../utils/hrUtils';
 
 interface AttendanceCalendarProps {
     employeeId: string;
@@ -18,6 +19,8 @@ interface AttendanceCalendarProps {
     onAddPermit: (date: Date) => void;
     onAddManualHours: (date: Date) => void;
     onTimeBankAction: (date: Date) => void;
+    onEditAttendance: (record: TimeAttendanceRecord) => void;
+    onDeleteAttendance: (recordId: string) => void;
     onClose: () => void;
 }
 
@@ -36,9 +39,19 @@ export const AttendanceCalendar: React.FC<AttendanceCalendarProps> = ({
     onAddPermit,
     onAddManualHours,
     onTimeBankAction,
+    onEditAttendance,
+    onDeleteAttendance,
     onClose
 }) => {
     const today = new Date();
+
+    // Helper: Expected hours by day of week
+    const getExpectedHours = (date: Date) => {
+        const day = getDay(date);
+        if (day === 0) return 0; // Sunday
+        if (day === 6) return 4; // Saturday
+        return 8; // Mon-Fri
+    };
 
     // Determine the range to display based on global filters
     const rangeStart = useMemo(() => {
@@ -115,7 +128,7 @@ export const AttendanceCalendar: React.FC<AttendanceCalendarProps> = ({
 
         const bankBalance = timeBank.reduce((sum, b) => sum + b.hours, 0);
 
-        return { totalHours: totalMinutes / 60, bankBalance };
+        return { totalMinutes, bankBalanceMinutes: bankBalance * 60 };
     }, [days, attendance, timeBank]);
 
     return (
@@ -137,13 +150,12 @@ export const AttendanceCalendar: React.FC<AttendanceCalendarProps> = ({
                     <div className="flex gap-12">
                         <div className="text-right">
                             <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Horas en Período</p>
-                            <p className="text-3xl font-black tracking-tighter text-white">{periodStats.totalHours.toFixed(1)}h</p>
+                            <p className="text-3xl font-black tracking-tighter text-white">{formatMinutesToHM(periodStats.totalMinutes)}</p>
                         </div>
                         <div className="text-right">
                             <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-1">Estado Banco Horas</p>
-                            <div className={`flex items-center justify-end gap-2 text-3xl font-black tracking-tighter ${periodStats.bankBalance < 0 ? 'text-rose-500' : 'text-emerald-400'}`}>
-                                {periodStats.bankBalance > 0 && '+'}
-                                {periodStats.bankBalance.toFixed(1)}h
+                            <div className={`flex items-center justify-end gap-2 text-3xl font-black tracking-tighter ${periodStats.bankBalanceMinutes < 0 ? 'text-rose-500' : 'text-emerald-400'}`}>
+                                {formatMinutesToHM(periodStats.bankBalanceMinutes)}
                                 <History className="w-5 h-5 ml-2" />
                             </div>
                         </div>
@@ -176,7 +188,7 @@ export const AttendanceCalendar: React.FC<AttendanceCalendarProps> = ({
                                         </span>
                                         <div className="flex gap-1">
                                             {holiday && <div className="bg-amber-100 text-amber-600 p-1 rounded-lg" title={holiday.name}><Sun className="w-3 h-3" /></div>}
-                                            {dailyMinutes > 0 && <div className="bg-emerald-100 text-emerald-600 text-[8px] font-black px-2 py-0.5 rounded-lg">{(dailyMinutes / 60).toFixed(1)}h</div>}
+                                            {dailyMinutes > 0 && <div className="bg-emerald-100 text-emerald-600 text-[8px] font-black px-2 py-0.5 rounded-lg">{formatMinutesToHM(dailyMinutes)}</div>}
                                         </div>
                                     </div>
 
@@ -191,11 +203,35 @@ export const AttendanceCalendar: React.FC<AttendanceCalendarProps> = ({
                                             </div>
                                         )}
 
+                                        {holiday && (
+                                            <div className="bg-amber-50 border border-amber-100 p-2 rounded-xl flex flex-col gap-1">
+                                                <div className="flex items-center gap-2">
+                                                    <Sun className="w-3 h-3 text-amber-600" />
+                                                    <span className="text-[9px] font-black text-amber-600 uppercase tracking-widest">Feriado</span>
+                                                </div>
+                                                <div className="text-[10px] font-bold text-amber-700">
+                                                    {getExpectedHours(day)}h computadas
+                                                </div>
+                                            </div>
+                                        )}
+
                                         {dayAtts.length > 0 ? dayAtts.map((att, aIdx) => (
-                                            <div key={aIdx} className="bg-slate-50 p-2 rounded-xl flex flex-col gap-1 border border-slate-100">
+                                            <div key={aIdx} className="bg-slate-50 p-2 rounded-xl flex flex-col gap-1 border border-slate-100 relative group/att">
                                                 <div className="flex items-center justify-between">
-                                                    <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest">{att.branch || 'S/D'}</span>
-                                                    <CheckCircle className="w-2.5 h-2.5 text-emerald-500" />
+                                                    <span className={`text-[7px] font-black uppercase tracking-widest ${att.branch === 'MANUAL' ? 'text-indigo-500' : 'text-slate-400'}`}>
+                                                        {att.branch || 'S/D'}
+                                                    </span>
+                                                    <div className="flex items-center gap-1">
+                                                        <div className="hidden group-hover/att:flex items-center gap-1 mr-1">
+                                                            <button onClick={() => onEditAttendance(att)} className="p-0.5 hover:text-indigo-600 transition-colors">
+                                                                <Edit2 className="w-2.5 h-2.5" />
+                                                            </button>
+                                                            <button onClick={() => onDeleteAttendance(att.id)} className="p-0.5 hover:text-rose-600 transition-colors">
+                                                                <Trash2 className="w-2.5 h-2.5" />
+                                                            </button>
+                                                        </div>
+                                                        <CheckCircle className="w-2.5 h-2.5 text-emerald-500" />
+                                                    </div>
                                                 </div>
                                                 <div className="flex items-center gap-1.5 text-[9px] font-bold text-slate-600">
                                                     <Clock className="w-3 h-3 opacity-40" />
@@ -215,7 +251,7 @@ export const AttendanceCalendar: React.FC<AttendanceCalendarProps> = ({
                                         {bankRecords.map((b, bIdx) => (
                                             <div key={bIdx} className={`text-[9px] font-black px-3 py-2 rounded-xl border flex items-center justify-between ${b.hours < 0 ? 'bg-rose-50 text-rose-600 border-rose-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'
                                                 }`}>
-                                                <span>{b.hours < 0 ? 'DEBE' : 'PAGÓ'} {Math.abs(b.hours)}h</span>
+                                                <span>{b.hours < 0 ? 'DEBE' : 'PAGÓ'} {formatMinutesToHM(Math.abs(b.hours * 60))}</span>
                                                 <History className="w-3 h-3" />
                                             </div>
                                         ))}
@@ -227,16 +263,18 @@ export const AttendanceCalendar: React.FC<AttendanceCalendarProps> = ({
                                         )}
                                     </div>
 
-                                    {/* Action Hover Menu */}
-                                    <div className="absolute inset-0 bg-slate-900/90 opacity-0 group-hover:opacity-100 transition-all rounded-[32px] flex items-center justify-center gap-3 scale-95 group-hover:scale-100 backdrop-blur-sm">
-                                        <button onClick={() => onAddManualHours(day)} title="Agregar Horas Manuel" className="p-3 bg-white text-slate-900 rounded-2xl hover:bg-emerald-500 hover:text-white transition-all transform hover:scale-110">
-                                            <Clock className="w-5 h-5" />
+                                    {/* Action Hover Menu - Refined floating bar to not block visibility */}
+                                    <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-slate-900/95 opacity-0 group-hover:opacity-100 transition-all rounded-3xl flex items-center gap-1 p-1.5 shadow-2xl z-30 border border-white/10 backdrop-blur-md translate-y-2 group-hover:translate-y-0">
+                                        <button onClick={(e) => { e.stopPropagation(); onAddManualHours(day); }} title="Agregar Fichaje" className="p-2.5 text-white hover:bg-emerald-500 rounded-2xl transition-all flex items-center gap-2 group/btn">
+                                            <Clock className="w-4 h-4" />
                                         </button>
-                                        <button onClick={() => onAddLicense(day)} title="Licencia/Vacaciones" className="p-3 bg-white text-slate-900 rounded-2xl hover:bg-blue-500 hover:text-white transition-all transform hover:scale-110">
-                                            <Briefcase className="w-5 h-5" />
+                                        <div className="w-px h-4 bg-white/10 mx-1" />
+                                        <button onClick={(e) => { e.stopPropagation(); onAddLicense(day); }} title="Licencia/Vacaciones" className="p-2.5 text-white hover:bg-blue-500 rounded-2xl transition-all flex items-center gap-2 group/btn">
+                                            <Briefcase className="w-4 h-4" />
                                         </button>
-                                        <button onClick={() => onTimeBankAction(day)} title="Banco de Horas" className="p-3 bg-white text-slate-900 rounded-2xl hover:bg-rose-500 hover:text-white transition-all transform hover:scale-110">
-                                            <RotateCcw className="w-5 h-5" />
+                                        <div className="w-px h-4 bg-white/10 mx-1" />
+                                        <button onClick={(e) => { e.stopPropagation(); onTimeBankAction(day); }} title="Banco de Horas" className="p-2.5 text-white hover:bg-rose-500 rounded-2xl transition-all flex items-center gap-2 group/btn">
+                                            <RotateCcw className="w-4 h-4" />
                                         </button>
                                     </div>
                                 </div>

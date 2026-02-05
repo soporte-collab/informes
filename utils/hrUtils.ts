@@ -69,3 +69,9 @@ export const parseExcelTime = (val: any): string | null => {
     if (str.match(/^\d{1,2}:\d{1,2}/)) return str;
     return null;
 };
+export const formatMinutesToHM = (totalMinutes: number): string => {
+    const hours = Math.floor(Math.abs(totalMinutes) / 60);
+    const minutes = Math.round(Math.abs(totalMinutes) % 60);
+    const sign = totalMinutes < 0 ? '-' : '';
+    return `${sign}${hours}h ${minutes.toString().padStart(2, '0')}m`;
+};

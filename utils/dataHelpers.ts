@@ -306,27 +306,43 @@ export const processExpenseData = (data: RawExpenseRow[]): ExpenseRecord[] => {
   let currentSupplier = "Varios";
 
   data.forEach((row, index) => {
-    // Zetti outputs often group multiple documents under one supplier header row
-    // If we find a new supplier, we track it for all subsequent rows until the next change
+    // 1. Supplier Inheritance (Zetti groups multiple rows under one Entity header)
     const supplierInRow = getValue(row, "Entidad", "Proveedor", "Beneficiario", "Nombre");
     if (supplierInRow && supplierInRow.trim() !== "") {
       currentSupplier = supplierInRow.trim();
     }
 
-    const dateStr = getValue(row, "Fecha Emision", "Fecha", "FechaPago");
+    // 2. Row Filtering (Only document rows have dates)
+    const dateStr = getValue(row, "FechaEmision", "Fecha Emision", "Fecha", "FechaPago");
     const date = parseDate(dateStr);
 
-    // If no date, this is likely a metadata row or a sub-row without business data
+    // Skip metadata/blank rows
     if (!date) return;
 
-    const dueDateStr = getValue(row, "FechaVenc", "Vencimiento", "Vto");
-    const dueDate = parseDate(dueDateStr) || date;
-    const amount = parseCurrency(getValue(row, "Importe", "Monto", "Total", "Imp. Neto"));
+    // 3. Financial Data Parsing
+    const amount = parseCurrency(getValue(row, "Monto", "Importe", "Total", "Imp. Neto"));
     const supplier = currentSupplier;
     const code = getValue(row, "Codificacion", "Comprobante") || "-";
 
-    // Generar un ID más único combinando proveedor, fecha, monto y código
-    const uniqueId = `EXP-${supplier}-${date.getTime()}-${amount}-${code}`.replace(/\s+/g, '_');
+    // 4. Metadata Mapping
+    const dueDateStr = getValue(row, "FechaVenc", "Vencimiento", "Vto");
+    const dueDate = parseDate(dueDateStr) || date;
+    const branch = getValue(row, "Nodo", "Sucursal") || "General";
+
+    // 5. Status Normalization (Crucial for EBITDA calculations)
+    // Zetti states: PAGADO, INGRESADO, AGRUPADO, LIQUIDADO, IGNORADO
+    const rawStatus = (getValue(row, "Estado") || "PAGADO").toUpperCase();
+    let status = "PAGADO";
+
+    if (rawStatus.includes("INGR") || rawStatus.includes("AGRU")) {
+      status = "INGRESADO"; // Pending
+    } else if (rawStatus.includes("PAG") || rawStatus.includes("LIQU")) {
+      status = "PAGADO"; // Real Outflow
+    } else if (rawStatus.includes("IGNOR")) {
+      status = "IGNORADO"; // We keep it for Audit purposes but don't count it as Paid/Pending later
+    }
+
+    const uniqueId = `EXP-${supplier}-${date.getTime()}-${amount}-${code}-${index}`.replace(/\s+/g, '_');
 
     processed.push({
       id: uniqueId,
@@ -338,11 +354,12 @@ export const processExpenseData = (data: RawExpenseRow[]): ExpenseRecord[] => {
       amount: amount,
       code: code,
       type: getValue(row, "TipoValor") || "Varios",
-      branch: getValue(row, "Nodo") || "General",
-      status: getValue(row, "Estado") || "Pagado",
+      branch: branch,
+      status: status,
       items: []
     });
   });
+
   return processed.sort((a, b) => b.issueDate.getTime() - a.issueDate.getTime());
 };
 

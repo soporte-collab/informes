@@ -410,6 +410,11 @@ const App: React.FC = () => {
         if (!confirm("¿Seguro que deseas borrar toda la información de Gastos?")) return;
         await clearExpensesDB();
         setExpenseData([]);
+
+        // Refresh service data too
+        const allServices = await getAllServicesFromDB();
+        setServiceData(allServices);
+
         alert("Información de Gastos borrada.");
     };
 

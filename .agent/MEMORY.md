@@ -183,5 +183,78 @@ Estas reglas son de cumplimiento OBLIGATORIO para evitar discrepancias:
 ### 13. Optimización de Reportes (Impresión)
 - **Fix "Página en Blanco"**: Se detectó que las animaciones de Tailwind (`animate-in`, `fade-in`) bloqueaban la captura del PDF en el navegador. Se crearon reglas `@media print` para forzar opacidad 100% y eliminar transiciones, garantizando reportes de Deuda claros y en formato A4.
 
+### 14. Mix Maestro Dashboard v2.1 y Conciliación de Gastos (05 de Feb, 2026)
+- **EBITDA Dinámico (Cash-on-Hand)**: Se refinó el cálculo del EBITDA para distinguir entre facturas Pagadas e Ingresadas.
+    - **Real Expense Outflow**: Solo suma registros con estado `PAGADO` (o servicios/sueldos).
+    - **Pending Liabilities**: Visualiza el total de registros `INGRESADO` como deuda a corto plazo sin afectar el EBITDA actual.
+- **Relación Facturación vs Compras (Offset +1d)**: Nuevo gráfico de performance que permite visualizar si las ventas del día cubren la reposición de stock (compras) proyectada para el día siguiente.
+- **Simplificación de CSV de Proveedores**: 
+    - Se abandonó el soporte para archivos CSV de Zetti con desglose de ítems debido a formateo inconsistente en el origen.
+    - El sistema ahora se basa exclusivamente en el formato de exportación de **Encabezados (sin ítems)**, garantizando una carga rápida y precisa de importes, fechas y estados.
+    - **Normalización de Estados**: Los estados de Zetti (`PAGADO`, `AGRUPADO`, `LIQUIDADO`, `INGRESADO`) se mapean automáticamente a `PAGADO` (Salida Real) o `INGRESADO` (Pasivo Pendiente).
+- **Herramientas de Control**: Botón de **"Borrar Historial"** en el dashboard de gastos para permitir re-cargas limpias.
+
 ---
-*Última actualización: 04 de Febrero, 2026 - 18:55hs*
+*Última actualización: 05 de Febrero, 2026 - 12:45hs*
+
+### 15. Sistema de RRHH: Mejoras en Visualización y Cálculo de Horas (05 de Feb, 2026)
+
+#### A. Formato de Horas Mejorado (HH:mm)
+- **Problema Detectado**: El sistema mostraba horas en formato decimal (ej: `8.7h`), lo cual era confuso ya que parecía "8 horas y 7 minutos" cuando en realidad representaba 8.7 horas (8h 42m).
+- **Solución Implementada**: 
+  - Se creó la función utilitaria `formatMinutesToHM()` en `hrUtils.ts` que convierte minutos totales a formato legible "Xh Ym".
+  - Se aplicó en todos los componentes de RRHH:
+    - `AttendanceCalendar.tsx`: Totales de período, banco de horas, horas diarias.
+    - `SchedulesDashboard.tsx`: Totales de empresa, horas extras, horas por empleado.
+    - `SalesHeatmap.tsx`: Tiempo activo y horas muertas.
+
+#### B. Cambio en Cálculo de Horas Extras (Sistema Semanal)
+- **Sistema Anterior**: Base fija de 180 horas mensuales, con prorrateo según días del mes.
+- **Sistema Nuevo (ACTUAL)**: **Base de 45 horas semanales**
+  - Fórmula: `expectedHours = (daysInRange / 7) × 45`
+  - **Ventajas**:
+    - Más justo y preciso para cualquier período (no solo meses completos).
+    - Se adapta automáticamente a la cantidad real de días laborables.
+    - Ejemplos:
+      - 7 días = 45h base
+      - 14 días = 90h base
+      - 31 días = 199.3h base (4.43 semanas)
+      - 28 días = 180h base (4 semanas exactas)
+  - Todo lo que supere esta base se considera **Horas Extras**.
+
+#### C. Jornada Laboral por Día de Semana
+- **Lunes a Viernes**: 8 horas
+- **Sábado**: 4 horas
+- **Domingo**: 0 horas (no laborable)
+
+#### D. Visualización de Feriados
+- **Nueva Funcionalidad**: Cuando un día está marcado como feriado, el calendario ahora muestra:
+  - Tarjeta color ámbar con ícono de sol
+  - Texto "FERIADO"
+  - **Horas computadas** según el día de la semana (ej: "8h computadas" para un feriado que cae lunes)
+- **Lógica**: Los feriados se consideran como horas trabajadas para efectos de liquidación, aunque el empleado no haya asistido.
+
+#### E. Gestión de Registros de Asistencia
+- **Edición y Eliminación**: 
+  - Al pasar el mouse sobre cualquier registro de asistencia (PASEO, CHACRAS, MANUAL), aparecen iconos de:
+    - **Lápiz (Editar)**: Permite modificar hora de entrada/salida
+    - **Tacho (Borrar)**: Elimina el registro tras confirmación
+  - Los registros marcados como "MANUAL" se destacan en color índigo para fácil identificación.
+
+#### F. Reporte de Impresión Profesional
+- **Nuevo Componente**: `AttendancePrintReport.tsx`
+- **Características**:
+  - Formato A4 horizontal (landscape) optimizado para impresión
+  - Sin animaciones para evitar páginas en blanco
+  - Incluye:
+    - Resumen ejecutivo: Total horas trabajadas, total horas extras, personal consolidado
+    - Tabla detallada por empleado con sucursal, horas totales, base mínima y extras
+    - Espacio para firma de validación de RRHH
+  - **Solución técnica**: CSS `@media print` que desactiva todas las animaciones y fuerza visibilidad completa del reporte.
+  - Delay de 300ms antes de abrir el diálogo de impresión para asegurar renderizado completo.
+
+#### G. Mejoras en UX del Calendario
+- **Menú flotante refinado**: El menú de acciones (agregar fichaje, licencia, banco de horas) ahora aparece como una barra compacta en la parte inferior de cada celda, sin bloquear la visibilidad de los datos existentes.
+- **Prevención de clicks accidentales**: Uso de `stopPropagation()` en botones de acción para evitar conflictos con eventos del contenedor padre.
+
+---

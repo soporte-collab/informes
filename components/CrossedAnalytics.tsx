@@ -23,9 +23,9 @@ import {
     ChevronRight, Scale, Zap, Info, ShieldCheck, CloudLightning, RefreshCw, ExternalLink, ShoppingBag, X
 } from 'lucide-react';
 
-import { format, addDays, startOfDay } from 'date-fns';
+import { format, addDays, startOfDay, subMonths, subDays, isWithinInterval } from 'date-fns';
 import { EntityMonthReport } from './EntityMonthReport';
-import { searchZettiInvoiceByNumber } from '../utils/zettiService';
+import { searchZettiInvoiceByNumber, searchZettiCustomers, searchZettiProductByDescription } from '../utils/zettiService';
 
 interface CrossedAnalyticsProps {
     salesData: SaleRecord[];
@@ -72,20 +72,38 @@ export const CrossedAnalytics: React.FC<CrossedAnalyticsProps> = ({
     const [zettiResult, setZettiResult] = useState<any>(null);
     const [zettiError, setZettiError] = useState<string | null>(null);
 
-    const handleZettiCheck = async (invoiceNumber: string, branchName: string) => {
+    // New Master Search States
+    const [searchType, setSearchType] = useState<'invoice' | 'client' | 'product'>('invoice');
+    const [zettiSearchResults, setZettiSearchResults] = useState<any[]>([]);
+
+    const handleZettiCheck = async (term: string, branchName: string, type: 'invoice' | 'client' | 'product' = 'invoice') => {
         setZettiLoading(true);
         setZettiError(null);
         setZettiResult(null);
+        setZettiSearchResults([]);
+
         try {
             const branchType = branchName.includes('CHACRAS') ? 'CHACRAS' : 'BIOSALUD';
-            const data = await searchZettiInvoiceByNumber(invoiceNumber, branchType);
-            // The API returns an array, we take the first matching invoice
-            if (Array.isArray(data) && data.length > 0) {
-                setZettiResult(data[0]);
-            } else if (data && !Array.isArray(data)) {
-                setZettiResult(data);
-            } else {
-                setZettiError('No se encontró el comprobante en los servidores de Zetti.');
+
+            if (type === 'invoice') {
+                const data = await searchZettiInvoiceByNumber(term, branchType);
+                if (Array.isArray(data) && data.length > 0) {
+                    setZettiResult(data[0]);
+                } else if (data && !Array.isArray(data)) {
+                    setZettiResult(data);
+                } else {
+                    setZettiError('No se encontró el comprobante en los servidores de Zetti.');
+                }
+            } else if (type === 'client') {
+                const data = await searchZettiCustomers(branchType === 'CHACRAS' ? '2406943' : '2378041', { term });
+                const results = data?.content || (Array.isArray(data) ? data : []);
+                setZettiSearchResults(results);
+                if (results.length === 0) setZettiError('No se encontraron clientes con ese nombre.');
+            } else if (type === 'product') {
+                const data = await searchZettiProductByDescription(term, branchType === 'CHACRAS' ? '2406943' : '2378041');
+                const results = data?.content || (Array.isArray(data) ? data : []);
+                setZettiSearchResults(results);
+                if (results.length === 0) setZettiError('No se encontraron productos con esa descripción.');
             }
         } catch (err: any) {
             setZettiError(err.message || 'Fallo al conectar con Zetti');
@@ -97,7 +115,7 @@ export const CrossedAnalytics: React.FC<CrossedAnalyticsProps> = ({
     // Auto-trigger Zetti Check if invoiceNumber is provided
     React.useEffect(() => {
         if (invoiceNumber) {
-            handleZettiCheck(invoiceNumber, initialNode || 'all');
+            handleZettiCheck(invoiceNumber, initialNode || 'all', 'invoice');
         }
     }, [invoiceNumber, initialNode]);
 
@@ -107,7 +125,7 @@ export const CrossedAnalytics: React.FC<CrossedAnalyticsProps> = ({
         return Array.from(b).sort();
     }, [invoiceData]);
 
-    // --- 1. FILTER DATA BY BRANCH AND DATE (Intermediate Step) ---
+    // --- 1. FILTER DATA BY BRANCH AND DATE (Current Period) ---
     const branchData = useMemo(() => {
         const start = startDate ? new Date(startDate + 'T00:00:00') : null;
         const end = endDate ? new Date(endDate + 'T23:59:59') : null;
@@ -130,6 +148,45 @@ export const CrossedAnalytics: React.FC<CrossedAnalyticsProps> = ({
             services: (serviceData || []).filter(s => branchFilter(s.branch) && dateFilter(s.issueDate))
         };
     }, [salesData, invoiceData, expenseData, serviceData, selectedBranch, startDate, endDate]);
+
+    // --- MOM COMPARISON LOGIC ---
+    const momData = useMemo(() => {
+        if (!startDate || !endDate) return null;
+        const currentStart = new Date(startDate + 'T00:00:00');
+        const currentEnd = new Date(endDate + 'T23:59:59');
+
+        // Calculate previous period (same duration, 1 month back if it's a full month, or just shift by days)
+        const diffDays = Math.round((currentEnd.getTime() - currentStart.getTime()) / (1000 * 60 * 60 * 24));
+        const prevStart = subMonths(currentStart, 1);
+        const prevEnd = addDays(prevStart, diffDays);
+
+        const branchFilter = (branch: string) => {
+            if (selectedBranch === 'all') return true;
+            return branch.toLowerCase().includes(selectedBranch.toLowerCase());
+        };
+
+        const dateFilter = (date: Date) => {
+            return date >= prevStart && date <= prevEnd;
+        };
+
+        const prevInvoices = invoiceData.filter(i => branchFilter(i.branch) && dateFilter(i.date));
+        const prevExpenses = expenseData.filter(e => branchFilter(e.branch) && dateFilter(e.issueDate));
+
+        const currentRev = branchData.sales.reduce((a, b) => a + b.totalAmount, 0);
+        const prevRev = salesData.filter(s => branchFilter(s.branch) && dateFilter(s.date)).reduce((a, b) => a + b.totalAmount, 0);
+
+        const currentExp = branchData.expenses.reduce((a, b) => a + b.amount, 0);
+        const prevExp = prevExpenses.reduce((a, b) => a + b.amount, 0);
+
+        return {
+            prevRev,
+            prevExp,
+            revDelta: prevRev > 0 ? ((currentRev - prevRev) / prevRev) * 100 : 0,
+            expDelta: prevExp > 0 ? ((currentExp - prevExp) / prevExp) * 100 : 0,
+            prevStart,
+            prevEnd
+        };
+    }, [startDate, endDate, salesData, invoiceData, expenseData, selectedBranch, branchData]);
 
     // --- 2. EXTRACT SELLERS LIST (From Branch Data) ---
     // This allows the dropdown to show all sellers valid for the selected branch
@@ -848,39 +905,49 @@ export const CrossedAnalytics: React.FC<CrossedAnalyticsProps> = ({
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between group hover:border-emerald-200 transition-colors">
                     <div>
-                        <p className="text-[10px] text-gray-400 uppercase font-black tracking-widest">Margen Bruto Est.</p>
-                        <p className={`text-xl font-black ${performanceStats.grossMargin >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                            {formatMoney(performanceStats.grossMargin)}
+                        <p className="text-[10px] text-gray-400 uppercase font-black tracking-widest">Facturación Bruta</p>
+                        <p className="text-xl font-black text-gray-900 mt-1">
+                            {formatMoney(performanceStats.totalSales)}
                         </p>
-                        <p className="text-[10px] text-gray-400 mt-1">Ventas vs Proveedores</p>
+                        {momData && (
+                            <div className={`mt-2 flex items-center gap-1 text-[10px] font-bold ${momData.revDelta >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                {momData.revDelta >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingUp className="w-3 h-3 rotate-180" />}
+                                {momData.revDelta.toFixed(1)}% vs mes ant.
+                            </div>
+                        )}
                     </div>
                 </div>
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between border-l-4 border-l-blue-500">
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between border-l-4 border-l-blue-500 group hover:border-blue-200 transition-colors">
                     <div>
                         <p className="text-[10px] text-blue-500 uppercase font-black tracking-widest">Impacto Servicios</p>
-                        <p className="text-xl font-black text-blue-700">{performanceStats.serviceImpact.toFixed(1)}%</p>
+                        <p className="text-xl font-black text-blue-700 mt-1">{performanceStats.serviceImpact.toFixed(1)}%</p>
                         <p className="text-[10px] text-gray-400 mt-1">S/ Total de Ventas</p>
                     </div>
                     <Zap className="w-5 h-5 text-blue-200" />
                 </div>
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between border-l-4 border-l-orange-500">
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between border-l-4 border-l-orange-500 group hover:border-orange-200 transition-colors">
                     <div>
-                        <p className="text-[10px] text-orange-500 uppercase font-black tracking-widest">Fuga Operativa</p>
-                        <p className="text-xl font-black text-orange-700">{formatMoney(performanceStats.totalServices)}</p>
-                        <p className="text-[10px] text-gray-400 mt-1">Gastos Externos</p>
+                        <p className="text-[10px] text-orange-500 uppercase font-black tracking-widest">Gastos Operativos</p>
+                        <p className="text-xl font-black text-orange-700 mt-1">{formatMoney(performanceStats.totalServices)}</p>
+                        {momData && (
+                            <div className={`mt-2 flex items-center gap-1 text-[10px] font-bold ${momData.expDelta <= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                {momData.expDelta <= 0 ? <CheckCircle className="w-3 h-3" /> : <AlertTriangle className="w-3 h-3" />}
+                                {momData.expDelta.toFixed(1)}% MoM
+                            </div>
+                        )}
                     </div>
                 </div>
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between border-l-4 border-l-purple-500">
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between border-l-4 border-l-purple-500 group hover:border-purple-200 transition-colors">
                     <div>
-                        <p className="text-[10px] text-purple-500 uppercase font-black tracking-widest">Ratio Salud Reposición</p>
-                        <p className="text-xl font-black text-purple-700">
+                        <p className="text-[10px] text-purple-500 uppercase font-black tracking-widest">Salud de Reposición</p>
+                        <p className="text-xl font-black text-purple-700 mt-1">
                             {performanceStats.performanceChart.length > 0
                                 ? (performanceStats.totalSales / (performanceStats.totalPurchases || 1)).toFixed(2)
                                 : '0.00'}x
                         </p>
-                        <p className="text-[10px] text-gray-400 mt-1">Ventas / Compras Totales</p>
+                        <p className="text-[10px] text-gray-400 mt-1">Ratio Vta/Comp</p>
                     </div>
                 </div>
             </div>
@@ -937,23 +1004,103 @@ export const CrossedAnalytics: React.FC<CrossedAnalyticsProps> = ({
             </div>
 
             {/* --- MASTER SEARCH --- */}
-            <div className="bg-gradient-to-r from-purple-600 to-blue-600 p-8 rounded-2xl shadow-lg text-white">
-                <div className="max-w-3xl mx-auto text-center space-y-4">
-                    <h2 className="text-2xl font-bold flex items-center justify-center gap-3">
-                        <Package className="w-6 h-6" />
-                        Buscador Maestro de Operaciones
-                    </h2>
-                    <div className="relative max-w-lg mx-auto">
-                        <input
-                            type="text"
-                            placeholder="Ej: 0001-00068969"
-                            className="w-full pl-12 pr-4 py-3 rounded-xl text-gray-900 shadow-xl focus:ring-4 focus:ring-purple-300 outline-none font-mono"
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                        />
-                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+            <div className="bg-slate-900 p-1 rounded-[32px] shadow-2xl overflow-hidden border border-slate-800">
+                <div className="bg-gradient-to-br from-slate-800 to-slate-950 p-8 text-white relative">
+                    <div className="absolute top-0 right-0 p-8 opacity-10">
+                        <Search className="w-32 h-32" />
+                    </div>
+
+                    <div className="max-w-3xl mx-auto space-y-6 relative z-10">
+                        <div className="text-center space-y-2">
+                            <h2 className="text-2xl font-black tracking-tighter flex items-center justify-center gap-3">
+                                <Zap className="w-6 h-6 text-yellow-400" />
+                                BUSCADOR MAESTRO ZETTI
+                            </h2>
+                            <p className="text-slate-400 text-sm font-bold uppercase tracking-widest">Auditoría en Tiempo Real & Cruce de Datos</p>
+                        </div>
+
+                        {/* Search Type Toggles */}
+                        <div className="flex justify-center gap-2">
+                            {[
+                                { id: 'invoice', label: 'Comprobante', icon: FileText },
+                                { id: 'client', label: 'Cliente/Cta Cte', icon: User },
+                                { id: 'product', label: 'Producto/Receta', icon: Package }
+                            ].map(type => (
+                                <button
+                                    key={type.id}
+                                    onClick={() => setSearchType(type.id as any)}
+                                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all ${searchType === type.id
+                                            ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20 scale-105'
+                                            : 'bg-slate-800 text-slate-500 hover:text-slate-300 border border-slate-700'
+                                        }`}
+                                >
+                                    <type.icon className="w-3 h-3" />
+                                    {type.label}
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="flex gap-2">
+                            <div className="relative flex-1">
+                                <input
+                                    type="text"
+                                    placeholder={
+                                        searchType === 'invoice' ? "Ej: 0001-00068969" :
+                                            searchType === 'client' ? "Nombre del Cliente o Mutual..." :
+                                                "Nombre del Producto o Droga..."
+                                    }
+                                    className="w-full pl-12 pr-4 py-4 rounded-2xl text-white bg-slate-800/50 border border-slate-700 shadow-xl focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none font-mono placeholder:text-slate-600 transition-all"
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleZettiCheck(searchTerm, selectedBranch, searchType)}
+                                />
+                                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 w-5 h-5" />
+                            </div>
+                            <button
+                                onClick={() => handleZettiCheck(searchTerm, selectedBranch, searchType)}
+                                disabled={zettiLoading || !searchTerm}
+                                className="px-8 py-4 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-slate-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest transition-all flex items-center gap-2 shadow-xl shadow-blue-500/20"
+                            >
+                                {zettiLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CloudLightning className="w-4 h-4" />}
+                                {zettiLoading ? 'BUSCANDO...' : 'BUSCAR'}
+                            </button>
+                        </div>
                     </div>
                 </div>
+
+                {/* Zetti Multi-results list (for Client or Product) */}
+                {zettiSearchResults.length > 0 && !zettiResult && (
+                    <div className="bg-slate-950 p-4 border-t border-slate-800 animate-in fade-in slide-in-from-top-4 duration-500">
+                        <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-4 px-2">Resultados en Zetti ({zettiSearchResults.length})</p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                            {zettiSearchResults.map((res, i) => (
+                                <div
+                                    key={i}
+                                    className="p-4 bg-slate-900 rounded-xl border border-slate-800 hover:border-blue-500/50 transition-all cursor-pointer group"
+                                    onClick={() => {
+                                        if (searchType === 'product') {
+                                            setProductSearch(res.description || res.name);
+                                            setZettiSearchResults([]);
+                                        } else if (searchType === 'client') {
+                                            // Maybe set another report state or just highlight
+                                            setZettiSearchResults([]);
+                                        }
+                                    }}
+                                >
+                                    <div className="flex justify-between items-start mb-2">
+                                        <div className="p-1.5 bg-blue-500/10 rounded-lg group-hover:bg-blue-500/20 transition-colors">
+                                            {searchType === 'client' ? <User className="w-4 h-4 text-blue-400" /> : <Package className="w-4 h-4 text-blue-400" />}
+                                        </div>
+                                        <ExternalLink className="w-3 h-3 text-slate-700 group-hover:text-blue-500" />
+                                    </div>
+                                    <p className="text-white font-bold text-sm uppercase leading-tight">{res.description || res.name || res.fullName}</p>
+                                    <p className="text-[10px] text-slate-500 font-mono mt-2">ID: {res.id || res.codification}</p>
+                                    {res.documentNumber && <p className="text-[10px] text-slate-400 mt-0.5">{res.documentType}: {res.documentNumber}</p>}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* --- SEARCH RESULTS --- */}

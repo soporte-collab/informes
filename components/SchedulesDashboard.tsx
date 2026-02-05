@@ -19,7 +19,7 @@ import {
 import { es } from 'date-fns/locale';
 import { Employee, TimeAttendanceRecord, SaleRecord, HolidayRecord, EmployeeLicense, SpecialPermit, TimeBankRecord } from '../types';
 import { formatMoney } from '../utils/dataHelpers';
-import { fuzzyMatch, parseExcelTime, parseExcelDate, normalizeName } from '../utils/hrUtils';
+import { fuzzyMatch, parseExcelTime, parseExcelDate, normalizeName, formatMinutesToHM } from '../utils/hrUtils';
 import {
     getAllEmployeesFromDB, getAllAttendanceFromDB, saveAttendanceToDB,
     getAllHolidaysFromDB, getAllLicensesFromDB, getAllSalesFromDB,
@@ -28,6 +28,7 @@ import {
     clearAttendanceDB, saveTimeBankToDB, getAllTimeBankFromDB
 } from '../utils/db';
 import { AttendanceCalendar } from './AttendanceCalendar';
+import { AttendancePrintReport } from './AttendancePrintReport';
 
 interface Props {
     startDate: string;
@@ -56,6 +57,7 @@ export const SchedulesDashboard: React.FC<Props> = ({
     const [searchTerm, setSearchTerm] = useState('');
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
     const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
+    const [showPrintModal, setShowPrintModal] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
     const [newHoliday, setNewHoliday] = useState({ date: '', name: '' });
 
@@ -292,6 +294,29 @@ export const SchedulesDashboard: React.FC<Props> = ({
         await saveAttendanceToDB(updated);
     };
 
+    const handleEditAttendance = async (record: TimeAttendanceRecord) => {
+        const entrance = prompt(`Editar Entrada (HH:mm):`, record.entrance1 || "09:00");
+        const exit = prompt(`Editar Salida (HH:mm):`, record.exit1 || "18:00");
+
+        if (!entrance || !exit) return;
+
+        const updatedAttendance = attendance.map(a =>
+            a.id === record.id ? { ...a, entrance1: entrance, exit1: exit, branch: 'MANUAL' } : a
+        );
+
+        setAttendance(updatedAttendance);
+        await saveAttendanceToDB(updatedAttendance);
+        alert("✅ Registro actualizado.");
+    };
+
+    const handleDeleteAttendance = async (recordId: string) => {
+        if (!confirm("¿Estás seguro de que quieres borrar este registro de asistencia?")) return;
+
+        const updatedAttendance = attendance.filter(a => a.id !== recordId);
+        setAttendance(updatedAttendance);
+        await saveAttendanceToDB(updatedAttendance);
+    };
+
     const handleTimeBankAction = async (date: Date) => {
         if (!selectedEmployeeId) return;
         const dateISO = format(date, 'yyyy-MM-dd');
@@ -373,7 +398,7 @@ export const SchedulesDashboard: React.FC<Props> = ({
         const getExpectedHours = (date: Date) => {
             const day = getDay(date);
             if (day === 0) return 0; // Sun
-            if (day === 6) return 5.5; // Sat until 13:30 (approx 5.5h)
+            if (day === 6) return 4; // Sat
             return 8;
         };
 
@@ -472,16 +497,14 @@ export const SchedulesDashboard: React.FC<Props> = ({
             });
 
             const totalHours = dailyStats.reduce((sum, ds) => sum + ds.hours, 0);
-            let expectedHoursRange = 0;
-            allDaysInRange.forEach(d => {
-                const dIso = format(d, 'yyyy-MM-dd');
-                const isHoliday = holidays.some(h => h.date === dIso);
-                const isLicense = groupLicenses.some(l => isWithinInterval(d, { start: parseISO(l.startDate), end: parseISO(l.endDate) }));
 
-                if (!isHoliday && !isLicense) {
-                    expectedHoursRange += getExpectedHours(d);
-                }
-            });
+            // 🏛️ BASE RULE: 45 hours per week is the standard.
+            const WEEKLY_BASE = 45;
+
+            // Calculate number of weeks in the range (rounded to 1 decimal)
+            const daysInRange = allDaysInRange.length;
+            const weeksInRange = daysInRange / 7;
+            const expectedHoursRange = weeksInRange * WEEKLY_BASE;
 
             return {
                 id: emp.id,
@@ -626,7 +649,10 @@ export const SchedulesDashboard: React.FC<Props> = ({
                                 <Upload className="w-4 h-4" /> Cargar Excel Reloj
                             </button>
                             <button onClick={exportToCSV} className="bg-emerald-600 text-white px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-3 hover:bg-emerald-500 transition-all shadow-xl shadow-emerald-500/20 active:scale-95">
-                                <FileDown className="w-4 h-4" /> Bajar Reporte Final
+                                <FileDown className="w-4 h-4" /> Bajar Reporte CSV
+                            </button>
+                            <button onClick={() => setShowPrintModal(true)} className="bg-indigo-600 text-white px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-3 hover:bg-indigo-500 transition-all shadow-xl shadow-indigo-500/20 active:scale-95">
+                                <Printer className="w-4 h-4" /> Vista de Impresión
                             </button>
                             <button onClick={() => setShowSettings(true)} className="bg-slate-800 text-slate-300 px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-3 hover:bg-slate-700 transition-all active:scale-95">
                                 <SettingsIcon className="w-4 h-4" /> Configuración
@@ -637,11 +663,11 @@ export const SchedulesDashboard: React.FC<Props> = ({
                     <div className="grid grid-cols-2 gap-4 w-full lg:w-auto">
                         <div className="bg-slate-800/40 backdrop-blur-xl p-8 rounded-[40px] border border-white/5 shadow-2xl min-w-[200px]">
                             <p className="text-slate-500 text-[9px] font-black uppercase mb-2 tracking-widest">Total Empresa</p>
-                            <p className="text-4xl font-black text-white">{employeeAnalysis.reduce((sum, e) => sum + e.totalHours, 0).toFixed(0)}h</p>
+                            <p className="text-4xl font-black text-white">{formatMinutesToHM(employeeAnalysis.reduce((sum, e) => sum + e.totalHours, 0) * 60)}</p>
                         </div>
                         <div className="bg-indigo-500/10 backdrop-blur-xl p-8 rounded-[40px] border border-indigo-500/20 shadow-2xl min-w-[200px]">
                             <p className="text-indigo-400 text-[9px] font-black uppercase mb-2 tracking-widest">Total Extras</p>
-                            <p className="text-4xl font-black text-indigo-400">{employeeAnalysis.reduce((sum, e) => sum + e.overtime, 0).toFixed(1)}h</p>
+                            <p className="text-4xl font-black text-indigo-400">{formatMinutesToHM(employeeAnalysis.reduce((sum, e) => sum + e.overtime, 0) * 60)}</p>
                         </div>
                     </div>
                 </div>
@@ -718,14 +744,14 @@ export const SchedulesDashboard: React.FC<Props> = ({
                                                             day.status === 'holiday' ? 'bg-amber-100 text-amber-700 font-black text-[10px] shadow-sm' :
                                                                 'bg-slate-50 opacity-20'
                                                     }`}>
-                                                    {day.hours > 0 ? `${day.hours.toFixed(0)}h` : (day.status === 'license' ? 'LIC' : (day.status === 'holiday' ? 'FER' : ''))}
+                                                    {day.hours > 0 ? formatMinutesToHM(day.hours * 60) : (day.status === 'license' ? 'LIC' : (day.status === 'holiday' ? 'FER' : ''))}
                                                 </div>
                                             </td>
                                         ))}
                                         <td className="p-8 text-right bg-white group-hover:bg-slate-50 sticky right-0 z-10 shadow-[-5px_0_15px_-5px_rgba(0,0,0,0.05)]" onClick={() => setSelectedEmployeeId(emp.id)}>
                                             <div className="flex flex-col items-end">
-                                                <p className="text-lg font-black text-slate-900">{emp.totalHours.toFixed(1)}h</p>
-                                                {emp.overtime > 0 && <p className="text-[10px] font-black text-emerald-500">+{emp.overtime.toFixed(1)} EXTRAS</p>}
+                                                <p className="text-lg font-black text-slate-900">{formatMinutesToHM(emp.totalHours * 60)}</p>
+                                                {emp.overtime > 0 && <p className="text-[10px] font-black text-emerald-500">+{formatMinutesToHM(emp.overtime * 60)} EXTRAS</p>}
                                             </div>
                                         </td>
                                     </tr>
@@ -748,7 +774,7 @@ export const SchedulesDashboard: React.FC<Props> = ({
                             <div className="mt-auto space-y-4">
                                 <div className="bg-slate-50 p-4 rounded-3xl">
                                     <p className="text-[9px] font-black text-slate-400 uppercase">Horas Extras del Mes</p>
-                                    <p className="text-2xl font-black text-indigo-500">+{emp.overtime.toFixed(1)}h</p>
+                                    <p className="text-2xl font-black text-indigo-500">+{formatMinutesToHM(emp.overtime * 60)}</p>
                                 </div>
                                 <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
                                     <div className={`h-full rounded-full ${emp.progressPerc >= 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`} style={{ width: `${emp.progressPerc}%` }} />
@@ -776,8 +802,23 @@ export const SchedulesDashboard: React.FC<Props> = ({
                     onAddPermit={handleAddPermit}
                     onAddManualHours={handleAddManualHours}
                     onTimeBankAction={handleTimeBankAction}
+                    onEditAttendance={handleEditAttendance}
+                    onDeleteAttendance={handleDeleteAttendance}
                     onClose={() => setSelectedEmployeeId(null)}
                 />
+            )}
+
+            {/* Print Report Modal */}
+            {showPrintModal && (
+                <div id="print-report-modal-wrapper" className="fixed inset-0 z-[150] bg-white overflow-y-auto">
+                    <AttendancePrintReport
+                        data={employeeAnalysis}
+                        startDate={globalStartDate}
+                        endDate={globalEndDate}
+                        user="ADMIN"
+                        onClose={() => setShowPrintModal(false)}
+                    />
+                </div>
             )}
 
             {/* Manual Link Modal */}

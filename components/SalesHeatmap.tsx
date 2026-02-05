@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { SaleRecord } from '../types';
 import { Grid, Calculator, Hash, Zap } from 'lucide-react';
+import { formatMinutesToHM } from '../utils/hrUtils';
 
 interface SalesHeatmapProps {
     data: SaleRecord[];
@@ -195,12 +196,12 @@ export const SalesHeatmap: React.FC<SalesHeatmapProps> = ({ data, onCellClick })
                 <div className="grid grid-cols-3 gap-4 mb-6 animate-in fade-in slide-in-from-top-4 duration-500">
                     <div className="bg-emerald-50 border border-emerald-100 p-3 rounded-xl flex flex-col items-center">
                         <span className="text-[10px] font-bold uppercase text-emerald-400 tracking-widest">Tiempo Activo</span>
-                        <span className="text-xl font-black text-emerald-700">{(totalActiveMinutes / 60).toFixed(1)} hs</span>
+                        <span className="text-xl font-black text-emerald-700">{formatMinutesToHM(totalActiveMinutes)}</span>
                         <span className="text-[9px] text-emerald-600/60 font-medium">Intervalos con venta</span>
                     </div>
                     <div className="bg-red-50 border border-red-100 p-3 rounded-xl flex flex-col items-center">
                         <span className="text-[10px] font-bold uppercase text-red-400 tracking-widest">Horas Muertas</span>
-                        <span className="text-xl font-black text-red-600">{(totalDeadMinutes / 60).toFixed(1)} hs</span>
+                        <span className="text-xl font-black text-red-600">{formatMinutesToHM(totalDeadMinutes)}</span>
                         <span className="text-[9px] text-red-600/60 font-medium font-bold">8:00 - 20:30 hs sin ventas</span>
                     </div>
                     <div className="bg-slate-50 border border-slate-100 p-3 rounded-xl flex flex-col items-center">

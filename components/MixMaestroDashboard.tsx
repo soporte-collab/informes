@@ -7,19 +7,10 @@ import {
     ChevronRight, Info, AlertTriangle, CheckCircle2, ShoppingCart, Calendar,
     X, Award, Lightbulb
 } from 'lucide-react';
-const ResponsiveContainer = ({ children }: any) => <div className="h-full w-full bg-gray-50 rounded-2xl flex items-center justify-center text-[10px] text-gray-400 font-bold uppercase border-2 border-dashed border-gray-100 italic">Mix Analytics Monitor</div>;
-const BarChart = ({ children }: any) => <div>{children}</div>;
-const Bar = () => null;
-const XAxis = () => null;
-const YAxis = () => null;
-const CartesianGrid = () => null;
-const Tooltip = () => null;
-const PieChart = ({ children }: any) => <div>{children}</div>;
-const Pie = () => null;
-const Cell = () => null;
-const Legend = () => null;
-const AreaChart = ({ children }: any) => <div>{children}</div>;
-const Area = () => null;
+import {
+    AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+    BarChart, Bar, Cell, PieChart, Pie, Legend
+} from 'recharts';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { LiveSellersLeaderboard } from './LiveSellersLeaderboard';
@@ -143,8 +134,11 @@ export const MixMaestroDashboard: React.FC<MixMaestroDashboardProps> = ({
         filteredData.forEach(tx => {
             const typeValue = (tx.type || '').toUpperCase();
 
-            // STRICT CLASSIFICATION
-            const isNC = typeValue.includes('NC') || typeValue.includes('N.C') || typeValue.includes('N/C') || typeValue.includes('NOTA DE CREDITO') || typeValue.includes('CREDITO') || typeValue.includes('DEVOLUCION');
+            // STRICT CLASSIFICATION (Robust NC detection)
+            const isNC = typeValue.includes('NC') || typeValue.includes('N.C') || typeValue.includes('N/C') ||
+                typeValue.includes('NOTA DE CREDITO') || typeValue.includes('CREDITO') ||
+                typeValue.includes('DEVOLUCION') || typeValue.includes('ANULACION') ||
+                typeValue.includes('REVERSO');
             const isTX = typeValue.includes('TX') || typeValue.includes('TRANSFER') || typeValue.includes('REMITO') || typeValue.includes('MOVIMIENTO') || typeValue.includes('TRSU') || typeValue.includes('AJUSTE');
 
             const amount = Number(tx.totalNet) || 0;
@@ -164,9 +158,6 @@ export const MixMaestroDashboard: React.FC<MixMaestroDashboardProps> = ({
                     totalCard += (tx.cardAmount || 0);
                     totalChecking += (tx.ctacteAmount || 0);
 
-                    // If main payment method was Wallet, we can attribute card amount to wallet for display, 
-                    // but since cardAmount aggregates both, we'll keep it in Card for financial accuracy 
-                    // or check providing a split if needed later. For now, strict sums.
                     if (tx.paymentMethod === 'Billetera Digital') {
                         totalWallets += (tx.cardAmount || 0);
                         totalCard -= (tx.cardAmount || 0);
@@ -194,26 +185,56 @@ export const MixMaestroDashboard: React.FC<MixMaestroDashboardProps> = ({
             });
         });
 
-        const uniqueOutflows = new Map();
-        (filteredExpenses || []).forEach(e => uniqueOutflows.set(e.id, e));
-        (filteredServices || []).forEach(s => uniqueOutflows.set(s.id, s));
+        // --- EXPENSE CLASSIFICATION (REAL vs PENDING) ---
+        // Real expense = PAGADO (CSV) + Services + Payroll
+        // Pending = INGRESADO (API sync mostly)
+        let realExpenseTotal = 0;
+        let pendingExpenseTotal = 0;
 
-        const combinedOutflow = Array.from(uniqueOutflows.values()).reduce((acc: number, curr: any) => acc + (curr.amount || 0), 0);
+        filteredExpenses.forEach(e => {
+            const status = (typeof e.status === 'object' ? (e.status as any).name : e.status) || '';
+            if (status.toUpperCase() === 'PAGADO') {
+                realExpenseTotal += e.amount;
+            } else if (status.toUpperCase() === 'INGRESADO') {
+                pendingExpenseTotal += e.amount;
+            } else {
+                // If unknown status, check if amount > 0. Usually if it comes from API without status it's pending.
+                // But here we'll be strict.
+                pendingExpenseTotal += e.amount;
+            }
+        });
+
+        const serviceTotal = filteredServices.reduce((acc, curr) => acc + (curr.amount || 0), 0);
         const payrollTotal = (filteredPayroll || []).reduce((acc, curr) => acc + curr.netAmount, 0);
 
-        const netReal = totalNet; // totalNet already excludes NC and TX
+        const totalRealOutflow = realExpenseTotal + serviceTotal + payrollTotal;
+
+        // --- AUDIT STRATEGY (Theft Prevention) ---
+        // We do NOT subtract Credits from Net Sales because reversed transactions 
+        // need to be audited separately to detect potential fraud/theft.
+        const netReal = totalNet;
+
         const linkedRate = filteredData.length > 0 ? (transactionsWithStock / filteredData.length) * 100 : 0;
         const grossMargin = totalNet > 0 ? ((totalNet - totalCostOfSales) / totalNet) * 100 : 0;
-        const finalEbitda = netReal - combinedOutflow - payrollTotal;
+        const creditRatio = totalNet > 0 ? (totalCredits / totalNet) * 100 : 0;
+
+        // EBITDA based ON GROSS SALES (for audit visibility)
+        const finalEbitda = netReal - totalRealOutflow;
+        const profitabilityRatio = netReal > 0 ? (finalEbitda / netReal) * 100 : 0;
 
         return {
             totalNet,
             totalCredits,
+            creditRatio,
             netReal,
             totalItems,
             linkedRate,
             grossMargin,
-            totalOutflow: combinedOutflow + payrollTotal,
+            profitabilityRatio,
+            totalOutflow: totalRealOutflow,
+            realExpenseTotal,
+            pendingExpenseTotal,
+            serviceTotal,
             payrollTotal,
             finalEbitda,
             transactionCount: filteredData.length,
@@ -225,7 +246,44 @@ export const MixMaestroDashboard: React.FC<MixMaestroDashboardProps> = ({
             totalWallets,
             totalTransfers
         };
-    }, [filteredData, filteredExpenses, filteredServices]);
+    }, [filteredData, filteredExpenses, filteredServices, filteredPayroll]);
+
+    // 2.5 Facturación vs Compras (Restock Offset +1)
+    const performanceChart = useMemo(() => {
+        const salesByDay = new Map<string, number>();
+        filteredData.forEach(tx => {
+            if (!tx.date) return;
+            const d = format(tx.date, 'yyyy-MM-dd');
+            salesByDay.set(d, (salesByDay.get(d) || 0) + (tx.totalNet || 0));
+        });
+
+        const purchasesByDay = new Map<string, number>();
+        filteredExpenses.forEach(e => {
+            const d = format(e.issueDate, 'yyyy-MM-dd');
+            purchasesByDay.set(d, (purchasesByDay.get(d) || 0) + e.amount);
+        });
+
+        const allDays = Array.from(new Set([...salesByDay.keys(), ...purchasesByDay.keys()])).sort();
+
+        return allDays.map(day => {
+            const dateObj = new Date(day + 'T12:00:00'); // Mid-day to avoid TZ shifts
+            const nextDayStr = format(new Date(dateObj.getTime() + 86400000), 'yyyy-MM-dd');
+
+            const sales = salesByDay.get(day) || 0;
+            // Shift provider invoice date +1 for visual reconciliation
+            // If I bought on Day N, I want to see its effect mapped to what I sold on Day N-1?
+            // OR: If I Sold on Day N, I want to see what I bought on Day N+1.
+            const purchasesRestock = purchasesByDay.get(nextDayStr) || 0;
+
+            return {
+                date: format(dateObj, 'dd/MM'),
+                fullDate: day,
+                ventas: sales,
+                compras: purchasesRestock
+            };
+        });
+    }, [filteredData, filteredExpenses]);
+
 
     // 3. Daily Sales for Chart
     const dailyData = useMemo(() => {
@@ -234,14 +292,23 @@ export const MixMaestroDashboard: React.FC<MixMaestroDashboardProps> = ({
             if (!tx.date) return;
             const day = format(tx.date, 'dd/MM');
             const current = map.get(day) || { date: day, sales: 0, credits: 0 };
-            if (tx.type?.includes('NC')) {
+
+            const typeValue = (tx.type || '').toUpperCase();
+            const isNC = typeValue.includes('NC') || typeValue.includes('N.C') || typeValue.includes('N/C') ||
+                typeValue.includes('NOTA DE CREDITO') || typeValue.includes('CREDITO') ||
+                typeValue.includes('DEVOLUCION') || (Number(tx.totalNet) < 0);
+
+            if (isNC) {
                 current.credits += Math.abs(tx.totalNet || 0);
             } else {
                 current.sales += (tx.totalNet || 0);
             }
             map.set(day, current);
         });
-        return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
+        return Array.from(map.values()).sort((a, b) => {
+            // Sort by day key properly
+            return a.date.localeCompare(b.date);
+        });
     }, [filteredData]);
 
     // 4. Product Intelligence (Top Items)
@@ -390,18 +457,18 @@ export const MixMaestroDashboard: React.FC<MixMaestroDashboardProps> = ({
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mt-10">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mt-10">
                     {/* STAT CARDS */}
                     <div className="bg-indigo-600 p-6 rounded-[32px] text-white shadow-xl shadow-indigo-500/20 group hover:scale-[1.02] transition-all duration-300">
                         <div className="flex justify-between items-start mb-4">
                             <div className="p-2 bg-white/20 rounded-xl"><DollarSign className="w-5 h-5" /></div>
                             <span className="text-[10px] font-black uppercase tracking-widest bg-white/20 px-2 py-1 rounded-full">Finanzas</span>
                         </div>
-                        <p className="text-indigo-100 text-xs font-bold uppercase tracking-wider mb-1">Ventas Netas</p>
+                        <p className="text-indigo-100 text-xs font-bold uppercase tracking-wider mb-1">Ventas Brutas</p>
                         <h3 className="text-2xl font-black">{formatMoney(metrics.totalNet)}</h3>
                         <div className="mt-4 pt-4 border-t border-white/10 flex items-center gap-2">
                             <ArrowUpRight className="w-4 h-4 text-indigo-300" />
-                            <span className="text-xs font-bold text-indigo-200">Facturación Confirmada</span>
+                            <span className="text-xs font-bold text-indigo-200">Facturación Total</span>
                         </div>
                     </div>
 
@@ -418,16 +485,18 @@ export const MixMaestroDashboard: React.FC<MixMaestroDashboardProps> = ({
                         </div>
                     </div>
 
-                    <div className="bg-slate-900 p-6 rounded-[32px] text-white shadow-xl group hover:scale-[1.02] transition-all duration-300">
+                    <div className="bg-slate-900 p-6 rounded-[32px] text-white shadow-xl group hover:scale-[1.02] transition-all duration-300 border border-slate-800">
                         <div className="flex justify-between items-start mb-4">
-                            <div className="p-2 bg-emerald-500/20 rounded-xl"><ShieldCheck className="w-5 h-5 text-emerald-400" /></div>
-                            <span className="text-[10px] font-black uppercase tracking-widest bg-emerald-500/20 text-emerald-400 px-2 py-1 rounded-full">Integridad</span>
+                            <div className="p-2 bg-emerald-500/20 rounded-xl"><Activity className="w-5 h-5 text-emerald-400" /></div>
+                            <span className="text-[10px] font-black uppercase tracking-widest bg-emerald-500/20 text-emerald-400 px-2 py-1 rounded-full">Desempeño</span>
                         </div>
-                        <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">Cruce de Datos</p>
-                        <h3 className="text-2xl font-black text-emerald-400">{metrics.linkedRate.toFixed(1)}%</h3>
+                        <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">Rentabilidad Neta</p>
+                        <h3 className={`text-2xl font-black ${metrics.profitabilityRatio > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {metrics.profitabilityRatio.toFixed(1)}%
+                        </h3>
                         <div className="mt-4 pt-4 border-t border-white/5 flex items-center gap-2">
-                            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                            <span className="text-xs font-bold text-slate-400">Ventas con Stock Vinculado</span>
+                            <TrendingUp className={`w-4 h-4 ${metrics.profitabilityRatio > 0 ? 'text-emerald-500' : 'text-rose-500'}`} />
+                            <span className="text-xs font-bold text-slate-400">Ratio EBITDA / Vtas</span>
                         </div>
                     </div>
 
@@ -440,7 +509,20 @@ export const MixMaestroDashboard: React.FC<MixMaestroDashboardProps> = ({
                         <h3 className="text-2xl font-black text-amber-600">{formatMoney(metrics.totalOutflow)}</h3>
                         <div className="mt-4 pt-4 border-t border-slate-50 flex items-center gap-2">
                             <Info className="w-4 h-4 text-amber-300" />
-                            <span className="text-[10px] font-bold text-slate-400 uppercase leading-none">Prov + Serv + Sueldos</span>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase leading-none">Costo Real de Operación</span>
+                        </div>
+                    </div>
+
+                    <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-xl group hover:shadow-2xl transition-all duration-300">
+                        <div className="flex justify-between items-start mb-4">
+                            <div className="p-2 bg-indigo-50 rounded-xl"><ShieldCheck className="w-5 h-5 text-indigo-500" /></div>
+                            <span className="text-[10px] font-black uppercase tracking-widest bg-indigo-50 text-indigo-600 px-2 py-1 rounded-full">Stock</span>
+                        </div>
+                        <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">Cruce de Datos</p>
+                        <h3 className="text-2xl font-black text-slate-800">{metrics.linkedRate.toFixed(1)}%</h3>
+                        <div className="mt-4 pt-4 border-t border-slate-50 flex items-center gap-2">
+                            <CheckCircle2 className="w-4 h-4 text-indigo-500" />
+                            <span className="text-xs font-bold text-slate-400">Ventas con Stock</span>
                         </div>
                     </div>
                 </div>
@@ -514,44 +596,51 @@ export const MixMaestroDashboard: React.FC<MixMaestroDashboardProps> = ({
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* CHARTS AREA */}
-                <div className="lg:col-span-2 bg-white p-8 rounded-[40px] border border-slate-100 shadow-xl">
-                    <div className="flex items-center justify-between mb-10">
-                        <div>
-                            <h3 className="text-xl font-black text-slate-900">Historial de Operaciones</h3>
-                            <p className="text-slate-400 text-sm font-medium italic">Volumen transaccional diario (Ventas vs Créditos)</p>
-                        </div>
-                        <div className="flex gap-4">
-                            <div className="flex items-center gap-2">
-                                <div className="w-3 h-3 rounded-full bg-indigo-600"></div>
-                                <span className="text-xs font-black uppercase text-slate-400">Ventas</span>
+                <div className="lg:col-span-2 space-y-8">
+                    {/* 1. Daily Sales vs Credits */}
+                    <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-xl">
+                        <div className="flex items-center justify-between mb-10">
+                            <div>
+                                <h3 className="text-xl font-black text-slate-900">Monitor de Operaciones & Auditoría</h3>
+                                <p className="text-slate-400 text-sm font-medium italic">Seguimiento de Ventas vs Créditos/Reversos para detección de anomalías.</p>
                             </div>
-                            <div className="flex items-center gap-2">
-                                <div className="w-3 h-3 rounded-full bg-rose-500"></div>
-                                <span className="text-xs font-black uppercase text-slate-400">NC</span>
+                            <div className="flex gap-4">
+                                <div className="flex items-center gap-2">
+                                    <div className="w-4 h-4 rounded-full bg-indigo-600 shadow-lg shadow-indigo-100"></div>
+                                    <span className="text-[10px] font-black uppercase text-slate-400">Ventas</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <div className="w-4 h-4 rounded-full bg-rose-500 shadow-lg shadow-rose-100"></div>
+                                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest pl-1">Notas de Crédito</span>
+                                </div>
                             </div>
                         </div>
-                    </div>
 
-                    <div className="h-[400px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={dailyData}>
-                                <defs>
-                                    <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.1} />
-                                        <stop offset="95%" stopColor="#4f46e5" stopOpacity={0} />
-                                    </linearGradient>
-                                </defs>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                                <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} dy={10} />
-                                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} tickFormatter={(v) => `$${v / 1000} k`} />
-                                <Tooltip
-                                    contentStyle={{ borderRadius: '24px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)', padding: '16px' }}
-                                    formatter={(v: number) => [formatMoney(v), '']}
-                                />
-                                <Area type="monotone" dataKey="sales" stroke="#4f46e5" strokeWidth={4} fillOpacity={1} fill="url(#colorSales)" />
-                                <Area type="monotone" dataKey="credits" stroke="#f43f5e" strokeWidth={4} fill="transparent" />
-                            </AreaChart>
-                        </ResponsiveContainer>
+                        <div className="h-[320px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <AreaChart data={dailyData}>
+                                    <defs>
+                                        <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.15} />
+                                            <stop offset="95%" stopColor="#4f46e5" stopOpacity={0} />
+                                        </linearGradient>
+                                        <linearGradient id="colorCredits" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.15} />
+                                            <stop offset="95%" stopColor="#f43f5e" stopOpacity={0} />
+                                        </linearGradient>
+                                    </defs>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                    <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} dy={10} />
+                                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} tickFormatter={(v) => `$${v / 1000}k`} />
+                                    <Tooltip
+                                        contentStyle={{ borderRadius: '24px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)', padding: '16px' }}
+                                        formatter={(v: number) => [formatMoney(v), '']}
+                                    />
+                                    <Area type="monotone" dataKey="sales" stroke="#4f46e5" strokeWidth={5} fillOpacity={1} fill="url(#colorSales)" />
+                                    <Area type="monotone" dataKey="credits" stroke="#f43f5e" strokeWidth={5} fillOpacity={1} fill="url(#colorCredits)" />
+                                </AreaChart>
+                            </ResponsiveContainer>
+                        </div>
                     </div>
                 </div>
 
@@ -561,18 +650,30 @@ export const MixMaestroDashboard: React.FC<MixMaestroDashboardProps> = ({
                         <TrendingUp className="w-32 h-32 text-emerald-400" />
                     </div>
 
-                    <h3 className="text-white font-black text-xl mb-2 relative z-10">Ganancia Operativa</h3>
-                    <p className="text-slate-400 text-sm font-medium mb-10 relative z-10">Resultado final después de todos los egresos detectados.</p>
+                    <h3 className="text-white font-black text-xl mb-2 relative z-10">Ganancia Operativa (CASH FLOW)</h3>
+                    <p className="text-slate-400 text-sm font-medium mb-10 relative z-10">Cálculo basado en egresos EFECTIVOS (Estado PAGADO).</p>
 
                     <div className="space-y-6 relative z-10">
+                        {/* Breakdown for transparency */}
+                        <div className="grid grid-cols-2 gap-4 pb-6 border-b border-white/5">
+                            <div>
+                                <p className="text-slate-500 text-[9px] font-black uppercase tracking-widest mb-1">Gasto Proveedores (Paid)</p>
+                                <p className="text-white font-bold text-sm tracking-tight">{formatMoney(metrics.realExpenseTotal)}</p>
+                            </div>
+                            <div className="text-right">
+                                <p className="text-amber-400 text-[9px] font-black uppercase tracking-widest mb-1">Pendiente Pago (Ingr.)</p>
+                                <p className="text-amber-400/80 font-bold text-sm tracking-tight">{formatMoney(metrics.pendingExpenseTotal)}</p>
+                            </div>
+                        </div>
+
                         <div className="flex justify-between items-end">
                             <div>
-                                <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mb-1">Caja Neta</p>
+                                <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mb-1">Facturación Emitida (Bruto)</p>
                                 <p className="text-white font-bold text-lg">{formatMoney(metrics.netReal)}</p>
                             </div>
                             <div className="text-right">
                                 <p className="text-rose-400 text-xs font-bold leading-none">-{metrics.totalOutflow > 0 ? ((metrics.totalOutflow / metrics.netReal) * 100).toFixed(1) : 0}%</p>
-                                <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest">Gastos/Serv</p>
+                                <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest">Peso Egresos</p>
                             </div>
                         </div>
 
@@ -585,27 +686,164 @@ export const MixMaestroDashboard: React.FC<MixMaestroDashboardProps> = ({
                         </div>
 
                         <div className="pt-8 mt-8 border-t border-white/5">
-                            <p className="text-emerald-400 text-[10px] font-black uppercase tracking-widest mb-2">EBITDA Proyectado</p>
+                            <p className="text-emerald-400 text-[10px] font-black uppercase tracking-widest mb-2">EBITDA (CASH FLOW)</p>
                             <h4 className="text-5xl font-black text-white tracking-tighter">{formatMoney(metrics.finalEbitda)}</h4>
-                            <p className="text-slate-500 text-xs mt-4 font-medium italic">
-                                * Margen bruto sobre ventas: {metrics.grossMargin.toFixed(1)}%
-                            </p>
+                            <div className="flex flex-col gap-2 mt-4">
+                                <p className="text-slate-500 text-xs font-medium italic">
+                                    * Margen operativo: {metrics.profitabilityRatio.toFixed(1)}%
+                                </p>
+                                <div className="flex items-center justify-between">
+                                    <p className="text-rose-400 text-[10px] font-black uppercase tracking-widest">
+                                        Pasivo Pendiente: {formatMoney(metrics.pendingExpenseTotal)}
+                                    </p>
+                                    <div className="flex items-center gap-1.5 text-amber-400 text-[10px] font-black uppercase tracking-widest">
+                                        <AlertTriangle className="w-3 h-3" /> NC: {formatMoney(metrics.totalCredits)}
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
-                        <div className="mt-10 bg-white/5 p-6 rounded-3xl border border-white/5 group-hover:border-emerald-500/30 transition-all duration-500">
-                            <div className="flex gap-4">
-                                <div className="p-3 bg-emerald-500/20 rounded-2xl"><ShieldCheck className="w-6 h-6 text-emerald-400" /></div>
-                                <div>
-                                    <p className="text-white font-black text-sm">Salud Financiera</p>
-                                    <p className="text-slate-500 text-xs font-medium">
-                                        {metrics.finalEbitda > 0 ? 'Operación Rentable' : 'Alerta de Margen'}
-                                    </p>
+                        <div className="mt-6 flex flex-col gap-3">
+                            <div className={`p-5 rounded-3xl border transition-all duration-500 ${metrics.creditRatio > 5 ? 'bg-amber-500/10 border-amber-500/30' : 'bg-white/5 border-white/5'}`}>
+                                <div className="flex gap-4">
+                                    <div className={`p-3 rounded-2xl ${metrics.creditRatio > 5 ? 'bg-amber-500/20' : 'bg-emerald-500/20'}`}>
+                                        {metrics.creditRatio > 5 ? <AlertTriangle className="w-6 h-6 text-amber-400" /> : <ShieldCheck className="w-6 h-6 text-emerald-400" />}
+                                    </div>
+                                    <div>
+                                        <p className="text-white font-black text-sm uppercase tracking-tight">Status de Auditoría</p>
+                                        <p className={`text-xs font-medium ${metrics.creditRatio > 5 ? 'text-amber-400' : 'text-slate-500'}`}>
+                                            {metrics.creditRatio > 5
+                                                ? `ALERTA: Ratio NC alto (${metrics.creditRatio.toFixed(1)}%) - Revisar posibles anulaciones.`
+                                                : `Ratio NC Saludable (${metrics.creditRatio.toFixed(1)}%). Operación controlada.`
+                                            }
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="p-5 rounded-3xl border border-white/5 bg-white/5">
+                                <div className="flex gap-4">
+                                    <div className="p-3 bg-indigo-500/20 rounded-2xl"><Zap className="w-6 h-6 text-indigo-400" /></div>
+                                    <div>
+                                        <p className="text-white font-black text-sm uppercase tracking-tight">Eficiencia de Caja</p>
+                                        <p className="text-slate-500 text-xs font-medium italic">
+                                            Ventas Brutas sin deducir NC para asegurar trazabilidad total.
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
+
+            {/* 2. Restock Alignment Chart (WIDE FORMAT) */}
+            <div className="mt-8 bg-white p-10 rounded-[40px] border border-slate-100 shadow-2xl overflow-hidden relative">
+                <div className="absolute top-0 right-0 p-12 opacity-[0.03] pointer-events-none">
+                    <Activity className="w-80 h-80 text-indigo-900" />
+                </div>
+
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between mb-12 gap-8 relative z-10">
+                    <div className="max-w-2xl">
+                        <h3 className="text-3xl font-black text-slate-900 flex items-center gap-4 tracking-tighter">
+                            <div className="p-4 bg-emerald-500 rounded-3xl shadow-xl shadow-emerald-100 transition-transform hover:scale-110">
+                                <TrendingUp className="w-8 h-8 text-white" />
+                            </div>
+                            Relación Facturación vs Compras
+                        </h3>
+                        <p className="text-slate-400 text-sm font-bold uppercase tracking-[0.2em] mt-4 ml-1">
+                            Análisis de Reposición: Ventas de Hoy vs Compras (Reposición de Stock) del día siguiente.
+                        </p>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row items-stretch gap-6 bg-slate-50/50 p-6 rounded-[32px] border border-slate-100 backdrop-blur-md">
+                        <div className="flex items-center gap-4 pr-6">
+                            <div className="w-12 h-12 rounded-2xl bg-emerald-500 flex items-center justify-center shadow-lg shadow-emerald-200">
+                                <ArrowUpRight className="w-7 h-7 text-white" />
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] leading-none mb-1.5">Facturación</p>
+                                <p className="text-sm font-black text-slate-800 uppercase">Ventas Netas</p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-4 border-l border-slate-200 pl-6">
+                            <div className="w-12 h-12 rounded-2xl bg-orange-500 flex items-center justify-center shadow-lg shadow-orange-200">
+                                <ShoppingCart className="w-7 h-7 text-white" />
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] leading-none mb-1.5">Compras (N+1)</p>
+                                <p className="text-sm font-black text-slate-800 uppercase">Reposición</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="h-[500px] relative z-10">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={performanceChart} margin={{ top: 20, right: 30, left: 10, bottom: 20 }}>
+                            <defs>
+                                <linearGradient id="colorRestockSales" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.25} />
+                                    <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                                </linearGradient>
+                                <linearGradient id="colorRestockPurchases" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#f97316" stopOpacity={0.25} />
+                                    <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
+                                </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                            <XAxis
+                                dataKey="date"
+                                axisLine={false}
+                                tickLine={false}
+                                tick={{ fontSize: 11, fontWeight: 900, fill: '#64748b' }}
+                                dy={25}
+                            />
+                            <YAxis
+                                axisLine={false}
+                                tickLine={false}
+                                tick={{ fontSize: 11, fontWeight: 900, fill: '#64748b' }}
+                                tickFormatter={(v) => `$${v / 1000}k`}
+                                dx={-10}
+                            />
+                            <Tooltip
+                                contentStyle={{
+                                    borderRadius: '32px',
+                                    border: 'none',
+                                    boxShadow: '0 30px 60px -12px rgb(0 0 0 / 0.25)',
+                                    padding: '24px',
+                                    background: 'rgba(255, 255, 255, 0.98)',
+                                    backdropFilter: 'blur(10px)'
+                                }}
+                                itemStyle={{ fontWeight: 900, fontSize: '14px' }}
+                                labelStyle={{ fontWeight: 900, fontSize: '12px', marginBottom: '12px', color: '#64748b', textTransform: 'uppercase' }}
+                                formatter={(v: number) => [formatMoney(v), '']}
+                            />
+                            <Area
+                                type="monotone"
+                                dataKey="ventas"
+                                stroke="#10b981"
+                                strokeWidth={7}
+                                fillOpacity={1}
+                                fill="url(#colorRestockSales)"
+                                animationDuration={2000}
+                                strokeLinecap="round"
+                            />
+                            <Area
+                                type="monotone"
+                                dataKey="compras"
+                                stroke="#f97316"
+                                strokeWidth={7}
+                                fillOpacity={1}
+                                fill="url(#colorRestockPurchases)"
+                                animationDuration={2500}
+                                strokeLinecap="round"
+                            />
+                        </AreaChart>
+                    </ResponsiveContainer>
+                </div>
+            </div>
+
 
             {/* PRODUCT INTELLIGENCE TABLE */}
             <div className="bg-white rounded-[40px] border border-slate-100 shadow-xl overflow-hidden">

@@ -454,15 +454,23 @@ export const ExpensesDashboard: React.FC<Props> = ({
                         <p className="text-xs text-gray-400">Haga clic en una fila para ver el desglose de productos</p>
                     </div>
                     <div className="flex items-center gap-2">
-                        {onClear && data.length > 0 && (
-                            <button
-                                onClick={onClear}
-                                className="flex items-center gap-2 px-3 py-1 bg-red-50 text-red-600 text-[10px] font-bold rounded-full hover:bg-red-100 transition-all border border-red-100"
-                            >
-                                <Trash2 className="w-3 h-3" />
-                                BORRAR TODO
-                            </button>
-                        )}
+                        <div className="flex flex-wrap items-center gap-3">
+                            {onClear && (
+                                <button
+                                    onClick={onClear}
+                                    className="p-3 bg-rose-50 text-rose-600 rounded-2xl hover:bg-rose-100 transition-all border border-rose-100 flex items-center gap-2 group"
+                                    title="Borrar Todo el Historial"
+                                >
+                                    <Trash2 className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                                    <span className="text-xs font-black uppercase">Borrar Historial</span>
+                                </button>
+                            )}
+                            <label className="flex items-center gap-3 px-6 py-3 bg-indigo-600 text-white rounded-2xl font-black text-xs hover:bg-indigo-700 transition-all cursor-pointer shadow-lg shadow-indigo-200">
+                                <Package className="w-4 h-4" />
+                                CARGAR CSV PROVEEDORES
+                                <input type="file" className="hidden" accept=".csv" onChange={onUpload} />
+                            </label>
+                        </div>
                         <span className="text-xs font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded-lg">
                             {filteredData.length} registros
                         </span>
