@@ -186,28 +186,38 @@ export const MixMaestroDashboard: React.FC<MixMaestroDashboardProps> = ({
         });
 
         // --- EXPENSE CLASSIFICATION (REAL vs PENDING) ---
-        // Real expense = PAGADO (CSV) + Services + Payroll
-        // Pending = INGRESADO (API sync mostly)
+        // Real expense = PAGADO (CSV/Zetti) + Services (Manual) + Payroll
+        // Pending = INGRESADO (Zetti mostly)
+        // NOTE: filteredServices contains BOTH 'expenses' (Zetti) and 'services' (Manual) from App.tsx
         let realExpenseTotal = 0;
         let pendingExpenseTotal = 0;
 
-        filteredExpenses.forEach(e => {
+        filteredServices.forEach(e => {
             const status = (typeof e.status === 'object' ? (e.status as any).name : e.status) || '';
-            if (status.toUpperCase() === 'PAGADO') {
+            const upperStatus = status.toUpperCase();
+
+            // Logic:
+            // 1. If it's explicitly PAGADO -> Real
+            // 2. If it's INGRESADO -> Pending
+            // 3. If it has no status (Manual Services likely) -> Real (Assumed paid/incurred)
+
+            if (upperStatus === 'PAGADO') {
                 realExpenseTotal += e.amount;
-            } else if (status.toUpperCase() === 'INGRESADO') {
+            } else if (upperStatus === 'INGRESADO') {
                 pendingExpenseTotal += e.amount;
+            } else if (upperStatus === 'IGNORADO') {
+                // Skip
             } else {
-                // If unknown status, check if amount > 0. Usually if it comes from API without status it's pending.
-                // But here we'll be strict.
-                pendingExpenseTotal += e.amount;
+                // Fallback for manual services without status or unknown
+                realExpenseTotal += e.amount;
             }
         });
 
-        const serviceTotal = filteredServices.reduce((acc, curr) => acc + (curr.amount || 0), 0);
         const payrollTotal = (filteredPayroll || []).reduce((acc, curr) => acc + curr.netAmount, 0);
 
-        const totalRealOutflow = realExpenseTotal + serviceTotal + payrollTotal;
+        // Total Outflow is now just Real Expenses (which includes Services) + Payroll
+        const totalRealOutflow = realExpenseTotal + payrollTotal;
+        const serviceTotal = 0; // Merged into realExpenseTotal for this calculation
 
         // --- AUDIT STRATEGY (Theft Prevention) ---
         // We do NOT subtract Credits from Net Sales because reversed transactions 

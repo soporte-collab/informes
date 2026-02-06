@@ -453,6 +453,63 @@ const App: React.FC = () => {
         alert("Información de Seguros borrada.");
     };
 
+    const handleRemoveDuplicates = async () => {
+        if (!salesData || salesData.length === 0) return;
+
+        const uniqueMap = new Map();
+        let duplicatesCount = 0;
+
+        salesData.forEach(sale => {
+            const key = `${sale.invoiceNumber}-${sale.productName}-${sale.totalAmount}-${sale.quantity}`.trim();
+            if (uniqueMap.has(key)) {
+                duplicatesCount++;
+            } else {
+                uniqueMap.set(key, sale);
+            }
+        });
+
+        if (duplicatesCount === 0) {
+            alert("No se encontraron registros duplicados.");
+            return;
+        }
+
+        if (confirm(`Se encontraron ${duplicatesCount} registros duplicados. ¿Deseas eliminarlos?`)) {
+            const cleanSales = Array.from(uniqueMap.values());
+            await clearSalesDB();
+            await saveSalesToDB(cleanSales);
+            setSalesData(cleanSales);
+            alert(`Limpieza completada. Se eliminaron ${duplicatesCount} duplicados.`);
+        }
+    };
+
+    const handleImportInsuranceData = async (newRecords: InsuranceRecord[]) => {
+        if (!newRecords.length) return;
+
+        // Snapshot Logic: Replace old historical debt for the branch(es) present in the new records
+        const branchesToReplace = new Set(newRecords.map(r => r.branch));
+
+        const filteredRecords = (insuranceData || []).filter(r =>
+            !(r.type === 'DEUDA_HISTORICA' && branchesToReplace.has(r.branch))
+        );
+
+        const merged = [...filteredRecords, ...newRecords];
+        await clearInsuranceDB(); // Force overwrite by clearing first
+        await saveInsuranceToDB(merged);
+        const updated = await getAllInsuranceFromDB();
+        setInsuranceData(updated);
+        alert(`Se han importado ${newRecords.length} registros de deuda real.`);
+    };
+
+    const handleClearInsuranceManualData = async () => {
+        if (!confirm("¿Seguro que deseas eliminar TODA la deuda histórica importada manualmente?")) return;
+
+        const cleanData = (insuranceData || []).filter(d => d.type !== 'DEUDA_HISTORICA');
+        await clearInsuranceDB();
+        await saveInsuranceToDB(cleanData);
+        setInsuranceData(cleanData);
+        alert("Deuda histórica manual eliminada.");
+    };
+
     const handleClearData = async () => {
         if (window.confirm("¿Está seguro de borrar toda la base de datos local?")) {
             await clearDB();
@@ -579,8 +636,9 @@ const App: React.FC = () => {
                         </div>
                     </div>
                     <div className="flex gap-2">
-                        <button onClick={handleClearData} className="flex-1 flex justify-center py-2 bg-slate-800 text-red-400 rounded-xl hover:bg-red-500 hover:text-white transition-all duration-300"><Trash2 className="w-4 h-4" /></button>
-                        <button onClick={() => firebaseAuth.signOut(auth)} className="flex-1 flex justify-center py-2 bg-slate-800 text-slate-400 rounded-xl hover:bg-slate-700 hover:text-white transition-all duration-300"><LogOut className="w-4 h-4" /></button>
+                        <button onClick={handleRemoveDuplicates} title="Eliminar Duplicados de Ventas" className="flex-1 flex justify-center py-2 bg-slate-800 text-yellow-400 rounded-xl hover:bg-yellow-500 hover:text-white transition-all duration-300"><Blend className="w-4 h-4" /></button>
+                        <button onClick={handleClearData} title="Borrar toda la Base de Datos" className="flex-1 flex justify-center py-2 bg-slate-800 text-red-400 rounded-xl hover:bg-red-500 hover:text-white transition-all duration-300"><Trash2 className="w-4 h-4" /></button>
+                        <button onClick={() => firebaseAuth.signOut(auth)} title="Cerrar Sesión" className="flex-1 flex justify-center py-2 bg-slate-800 text-slate-400 rounded-xl hover:bg-slate-700 hover:text-white transition-all duration-300"><LogOut className="w-4 h-4" /></button>
                     </div>
                 </div>
             </aside>
@@ -730,7 +788,11 @@ const App: React.FC = () => {
                                     data={insuranceData || []}
                                     startDate={startDate}
                                     endDate={endDate}
-                                    onUploadInsurance={() => { }}
+                                    selectedBranch={selectedBranch}
+                                    onStartDateChange={setStartDate}
+                                    onEndDateChange={setEndDate}
+                                    onImportData={handleImportInsuranceData}
+                                    onClearManualData={handleClearInsuranceManualData}
                                 />
                             )}
                             {activeTab === 'zetti' && <ZettiSync startDate={startDate} endDate={endDate} onDataImported={handleZettiImport} sellerMappings={sellerMappings} />}

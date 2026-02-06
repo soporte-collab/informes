@@ -1,0 +1,600 @@
+import { db, auth, storage } from '../src/firebaseConfig';
+import { ref, uploadString, getDownloadURL, deleteObject } from 'firebase/storage';
+import { SaleRecord, InvoiceRecord, ExpenseRecord, CurrentAccountRecord, InsuranceRecord, StockRecord, UnifiedTransaction, Employee, PayrollRecord, EmployeeLicense, HolidayRecord, SpecialPermit } from '../types';
+
+const SHARED_PATH_PREFIX = 'reports_data';
+
+// Generic helper to save JSON to Firebase Storage
+const saveJsonToStorage = async (data: any, fileName: string): Promise<string> => {
+  const user = auth.currentUser;
+  if (!user) throw new Error("Debes estar logueado para guardar datos.");
+
+  const storageRef = ref(storage, `${SHARED_PATH_PREFIX}/${fileName}`);
+  const jsonString = JSON.stringify(data);
+
+  await uploadString(storageRef, jsonString, 'raw', {
+    contentType: 'application/json',
+  });
+
+  return getDownloadURL(storageRef);
+};
+
+// Generic helper to load JSON from Firebase Storage
+const loadJsonFromStorage = async (fileName: string): Promise<any> => {
+  try {
+    const storageRef = ref(storage, `${SHARED_PATH_PREFIX}/${fileName}`);
+    let url;
+    try {
+      url = await getDownloadURL(storageRef);
+    } catch (error: any) {
+      if (error.code === 'storage/object-not-found') return [];
+      throw error;
+    }
+
+    // Add cache-busting query parameter
+    const response = await fetch(`${url}${url.includes('?') ? '&' : '?'}_t=${Date.now()}`, {
+      cache: 'no-store'
+    });
+
+    if (response.status === 404) return [];
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+    return await response.json();
+  } catch (error) {
+    console.error(`Error loading ${fileName}:`, error);
+    // Be careful here: if we return [] it might cause accidental wipes during a merge.
+    // For now we re-throw to block the save operation if load fails.
+    throw error;
+  }
+};
+
+export const testConnection = async () => {
+  return !!auth.currentUser;
+};
+
+// --- SALES FUNCTIONS ---
+
+export const saveSalesToDB = async (
+  newSales: SaleRecord[],
+  onProgress?: (processed: number, total: number) => void
+): Promise<void> => {
+  if (onProgress) onProgress(0, newSales.length);
+
+  const existingRecords = await getAllSalesFromDB();
+  const map = new Map<string, SaleRecord>();
+
+  existingRecords.forEach(r => map.set(r.id, r));
+  newSales.forEach(r => map.set(r.id, r));
+
+  const merged = Array.from(map.values());
+  await saveJsonToStorage(merged, 'sales.json');
+
+  if (onProgress) onProgress(newSales.length, newSales.length);
+};
+
+export const getAllSalesFromDB = async (): Promise<SaleRecord[]> => {
+  const rawData = await loadJsonFromStorage('sales.json');
+  if (!Array.isArray(rawData)) return [];
+  return rawData.map((item: any) => ({
+    ...item,
+    date: new Date(item.date)
+  }));
+};
+
+// --- INVOICES FUNCTIONS ---
+
+export const saveInvoicesToDB = async (
+  newInvoices: InvoiceRecord[],
+  onProgress?: (processed: number, total: number) => void
+): Promise<void> => {
+  if (onProgress) onProgress(0, newInvoices.length);
+
+  const existingRecords = await getAllInvoicesFromDB();
+  const map = new Map<string, InvoiceRecord>();
+
+  existingRecords.forEach(r => map.set(r.id, r));
+  newInvoices.forEach(r => map.set(r.id, r));
+
+  const merged = Array.from(map.values());
+  await saveJsonToStorage(merged, 'invoices.json');
+
+  if (onProgress) onProgress(newInvoices.length, newInvoices.length);
+};
+
+export const getAllInvoicesFromDB = async (): Promise<InvoiceRecord[]> => {
+  const rawData = await loadJsonFromStorage('invoices.json');
+  if (!Array.isArray(rawData)) return [];
+  return rawData.map((item: any) => ({
+    ...item,
+    date: new Date(item.date)
+  }));
+};
+
+// --- EXPENSES FUNCTIONS ---
+
+export const saveExpensesToDB = async (
+  newExpenses: ExpenseRecord[],
+  onProgress?: (processed: number, total: number) => void
+): Promise<void> => {
+  if (onProgress) onProgress(0, newExpenses.length);
+
+  const existingRecords = await getAllExpensesFromDB();
+  const map = new Map<string, ExpenseRecord>();
+
+  existingRecords.forEach(r => map.set(r.id, r));
+  newExpenses.forEach(r => map.set(r.id, r));
+
+  const merged = Array.from(map.values());
+  await saveJsonToStorage(merged, 'expenses.json');
+
+  if (onProgress) onProgress(newExpenses.length, newExpenses.length);
+};
+
+export const getAllExpensesFromDB = async (): Promise<ExpenseRecord[]> => {
+  const rawData = await loadJsonFromStorage('expenses.json');
+  if (!Array.isArray(rawData)) return [];
+  return rawData.map((item: any) => ({
+    ...item,
+    issueDate: new Date(item.issueDate),
+    dueDate: new Date(item.dueDate),
+    items: item.items || []
+  }));
+};
+
+// --- CURRENT ACCOUNTS FUNCTIONS ---
+
+export const saveCurrentAccountsToDB = async (
+  newRecords: CurrentAccountRecord[],
+  onProgress?: (processed: number, total: number) => void
+): Promise<void> => {
+  if (onProgress) onProgress(0, newRecords.length);
+
+  const existingRecords = await getAllCurrentAccountsFromDB();
+  const map = new Map<string, CurrentAccountRecord>();
+
+  existingRecords.forEach(r => map.set(r.id, r));
+  newRecords.forEach(r => map.set(r.id, r));
+
+  const merged = Array.from(map.values());
+  await saveJsonToStorage(merged, 'current_accounts.json');
+
+  if (onProgress) onProgress(newRecords.length, newRecords.length);
+};
+
+export const getAllCurrentAccountsFromDB = async (): Promise<CurrentAccountRecord[]> => {
+  const rawData = await loadJsonFromStorage('current_accounts.json');
+  if (!Array.isArray(rawData)) return [];
+  return rawData.map((item: any) => ({
+    ...item,
+    date: new Date(item.date)
+  }));
+};
+
+// --- SERVICES FUNCTIONS ---
+
+export const saveServicesToDB = async (
+  newServices: ExpenseRecord[],
+  onProgress?: (processed: number, total: number) => void
+): Promise<void> => {
+  if (onProgress) onProgress(0, newServices.length);
+
+  const existingRecords = await getAllServicesFromDB();
+  const map = new Map<string, ExpenseRecord>();
+
+  existingRecords.forEach(r => map.set(r.id, r));
+  newServices.forEach(r => map.set(r.id, r));
+
+  const merged = Array.from(map.values());
+  await saveJsonToStorage(merged, 'services.json');
+
+  if (onProgress) onProgress(newServices.length, newServices.length);
+};
+
+export const getAllServicesFromDB = async (): Promise<ExpenseRecord[]> => {
+  const rawData = await loadJsonFromStorage('services.json');
+  if (!Array.isArray(rawData)) return [];
+  return rawData.map((item: any) => ({
+    ...item,
+    issueDate: new Date(item.issueDate),
+    dueDate: new Date(item.dueDate),
+    items: item.items || []
+  }));
+};
+
+// --- INSURANCE FUNCTIONS ---
+
+export const saveInsuranceToDB = async (
+  newRecords: InsuranceRecord[],
+  onProgress?: (processed: number, total: number) => void
+): Promise<void> => {
+  if (onProgress) onProgress(0, newRecords.length);
+
+  const existingRecords = await getAllInsuranceFromDB();
+  const map = new Map<string, InsuranceRecord>();
+
+  existingRecords.forEach(r => map.set(r.id, r));
+  newRecords.forEach(r => map.set(r.id, r));
+
+  const merged = Array.from(map.values());
+  await saveJsonToStorage(merged, 'insurance.json');
+
+  if (onProgress) onProgress(newRecords.length, newRecords.length);
+};
+
+export const getAllInsuranceFromDB = async (): Promise<InsuranceRecord[]> => {
+  const rawData = await loadJsonFromStorage('insurance.json');
+  return rawData.map((item: any) => ({
+    ...item,
+    issueDate: new Date(item.issueDate),
+    dueDate: new Date(item.dueDate),
+    items: item.items || []
+  }));
+};
+
+// --- PRODUCT MASTER FUNCTIONS ---
+
+export const saveProductMasterToDB = async (
+  master: any[],
+  onProgress?: (processed: number, total: number) => void
+): Promise<void> => {
+  if (onProgress) onProgress(0, master.length);
+  await saveJsonToStorage(master, 'product_master.json');
+  if (onProgress) onProgress(master.length, master.length);
+};
+
+export const getAllProductMasterFromDB = async (): Promise<any[]> => {
+  const rawData = await loadJsonFromStorage('product_master.json');
+  return Array.isArray(rawData) ? rawData : [];
+};
+
+export const updateProductInMaster = async (barcode: string, updates: Partial<any>): Promise<void> => {
+  const master = await getAllProductMasterFromDB();
+  const index = master.findIndex((p: any) => p.barcode === barcode);
+
+  if (index !== -1) {
+    master[index] = { ...master[index], ...updates, lastUpdated: new Date() };
+  } else {
+    // If not found, we can add it as a new custom entry
+    master.push({ barcode, ...updates, lastUpdated: new Date() });
+  }
+
+  await saveProductMasterToDB(master);
+};
+
+// --- METADATA / SETTINGS FUNCTIONS ---
+
+export const getMetadata = async (docId: string): Promise<any> => {
+  try {
+    const user = auth.currentUser;
+    if (!user) return null;
+
+    // Using Storage for simplicity since the project already uses it for all JSON data
+    const storageRef = ref(storage, `${SHARED_PATH_PREFIX}/meta_${docId}.json`);
+    const url = await getDownloadURL(storageRef);
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    return await response.json();
+  } catch (e) {
+    return null;
+  }
+};
+
+export const saveMetadata = async (docId: string, data: any): Promise<void> => {
+  await saveJsonToStorage(data, `meta_${docId}.json`);
+};
+
+// --- PAYROLL FUNCTIONS ---
+
+export const saveEmployeesToDB = async (employees: any[]): Promise<void> => {
+  await saveJsonToStorage(employees, 'employees.json');
+};
+
+export const getAllEmployeesFromDB = async (): Promise<any[]> => {
+  const data = await loadJsonFromStorage('employees.json');
+  return Array.isArray(data) ? data : [];
+};
+
+// --- ATTENDANCE & HR FUNCTIONS ---
+
+export const getAllAttendanceFromDB = async (): Promise<any[]> => {
+  const data = await loadJsonFromStorage('attendance.json');
+  return Array.isArray(data) ? data : [];
+};
+
+export const saveAttendanceToDB = async (records: any[]): Promise<void> => {
+  await saveJsonToStorage(records, 'attendance.json');
+};
+
+export const savePayrollToDB = async (payroll: PayrollRecord[]): Promise<void> => {
+  await saveJsonToStorage(payroll, 'payroll.json');
+};
+
+export const getAllPayrollFromDB = async (): Promise<PayrollRecord[]> => {
+  const rawData = await loadJsonFromStorage('payroll.json');
+  return Array.isArray(rawData) ? rawData : [];
+};
+
+export const saveLicensesToDB = async (licenses: EmployeeLicense[]): Promise<void> => {
+  await saveJsonToStorage(licenses, 'licenses.json');
+};
+
+export const getAllLicensesFromDB = async (): Promise<EmployeeLicense[]> => {
+  const data = await loadJsonFromStorage('licenses.json');
+  return Array.isArray(data) ? data : [];
+};
+
+export const saveHolidaysToDB = async (holidays: HolidayRecord[]): Promise<void> => {
+  await saveJsonToStorage(holidays, 'holidays.json');
+};
+
+export const getAllHolidaysFromDB = async (): Promise<HolidayRecord[]> => {
+  const data = await loadJsonFromStorage('holidays.json');
+  return Array.isArray(data) ? data : [];
+};
+
+export const saveSpecialPermitsToDB = async (permits: SpecialPermit[]): Promise<void> => {
+  await saveJsonToStorage(permits, 'special_permits.json');
+};
+
+export const getAllSpecialPermitsFromDB = async (): Promise<SpecialPermit[]> => {
+  const data = await loadJsonFromStorage('special_permits.json');
+  return Array.isArray(data) ? data : [];
+};
+
+export const saveTimeBankToDB = async (records: any[]): Promise<void> => {
+  await saveJsonToStorage(records, 'time_bank.json');
+};
+
+export const getAllTimeBankFromDB = async (): Promise<any[]> => {
+  const data = await loadJsonFromStorage('time_bank.json');
+  return Array.isArray(data) ? data : [];
+};
+
+// --- SELLER MAPPING FUNCTIONS ---
+
+export const saveSellerMappingsToDB = async (mappings: Record<string, string>): Promise<void> => {
+  await saveJsonToStorage(mappings, 'seller_mappings.json');
+};
+
+export const getAllSellerMappingsFromDB = async (): Promise<Record<string, string>> => {
+  const data = await loadJsonFromStorage('seller_mappings.json');
+  return (data && typeof data === 'object' && !Array.isArray(data)) ? data : {};
+};
+
+// --- EMPLOYEE MAPPING FUNCTIONS ---
+
+export const saveEmployeeMappingsToDB = async (mappings: Record<string, string>): Promise<void> => {
+  await saveJsonToStorage(mappings, 'employee_mappings.json');
+};
+
+export const getAllEmployeeMappingsFromDB = async (): Promise<Record<string, string>> => {
+  const data = await loadJsonFromStorage('employee_mappings.json');
+  return (data && typeof data === 'object' && !Array.isArray(data)) ? data : {};
+};
+
+// --- GENERAL UTILS ---
+
+export const clearDB = async (): Promise<void> => {
+  try {
+    const user = auth.currentUser;
+    if (!user) return; // Can't clear if not logged in
+
+    const files = [
+      'sales.json', 'invoices.json', 'expenses.json', 'current_accounts.json',
+      'services.json', 'insurance.json', 'stock.json', 'meta_service_categories.json',
+      'unified.json', 'product_master.json', 'employees.json', 'payroll.json'
+    ];
+
+    await Promise.all(files.map(async (file) => {
+      try {
+        const fileRef = ref(storage, `${SHARED_PATH_PREFIX}/${file}`);
+        await deleteObject(fileRef);
+      } catch (e) { /* ignore if not found */ }
+    }));
+  } catch (error) {
+    console.error("Error clearing storage:", error);
+    throw error;
+  }
+};
+
+export const clearSalesDB = async () => {
+  try {
+    const fileRef = ref(storage, `${SHARED_PATH_PREFIX}/sales.json`);
+    await deleteObject(fileRef);
+  } catch (e) { console.error("Error al borrar ventas:", e); }
+};
+
+export const clearInvoicesDB = async () => {
+  try {
+    const fileRef = ref(storage, `${SHARED_PATH_PREFIX}/invoices.json`);
+    await deleteObject(fileRef);
+  } catch (e) { console.error("Error al borrar facturas:", e); }
+};
+
+export const clearExpensesDB = async () => {
+  try {
+    const fileRef = ref(storage, `${SHARED_PATH_PREFIX}/expenses.json`);
+    await deleteObject(fileRef);
+  } catch (e) { console.error("Error al borrar gastos:", e); }
+};
+
+export const clearCurrentAccountsDB = async () => {
+  try {
+    const fileRef = ref(storage, `${SHARED_PATH_PREFIX}/current_accounts.json`);
+    await deleteObject(fileRef);
+  } catch (e) { console.error("Error al borrar cuentas corrientes:", e); }
+};
+
+export const clearServicesDB = async () => {
+  try {
+    const fileRef = ref(storage, `${SHARED_PATH_PREFIX}/services.json`);
+    await deleteObject(fileRef);
+  } catch (e) { console.error("Error al borrar servicios:", e); }
+};
+
+export const clearInsuranceDB = async () => {
+  try {
+    const fileRef = ref(storage, `${SHARED_PATH_PREFIX}/insurance.json`);
+    await deleteObject(fileRef);
+  } catch (e) { console.error("Error al borrar seguros/obras sociales:", e); }
+};
+
+export const clearAttendanceDB = async () => {
+  try {
+    const fileRef = ref(storage, `${SHARED_PATH_PREFIX}/attendance.json`);
+    await deleteObject(fileRef);
+  } catch (e) { console.error("Error al borrar asistencias:", e); }
+};
+
+export const clearStockDB = async () => {
+  try {
+    const fileRef = ref(storage, `${SHARED_PATH_PREFIX}/stock.json`);
+    await deleteObject(fileRef);
+  } catch (e) { console.error("Error al borrar stock:", e); }
+};
+
+// --- PURGE BY DATE FUNCTIONS ---
+
+export const purgeDataByDateRange = async (startDate: string, endDate: string): Promise<{
+  invoicesRemoved: number;
+  salesRemoved: number;
+  expensesRemoved: number;
+  servicesRemoved: number;
+  insuranceRemoved: number;
+  currentAccountsRemoved: number;
+  stockRemoved: number;
+}> => {
+  const user = auth.currentUser;
+  if (!user) throw new Error("Debes estar logueado para modificar datos.");
+
+  // Load all current data
+  const [invoices, sales, expenses, services, insurance, accounts, stock] = await Promise.all([
+    getAllInvoicesFromDB(),
+    getAllSalesFromDB(),
+    getAllExpensesFromDB(),
+    getAllServicesFromDB(),
+    getAllInsuranceFromDB(),
+    getAllCurrentAccountsFromDB(),
+    getAllStockFromDB()
+  ]);
+
+  // Filter OUT records within the date range (inclusive)
+  const rangeStart = new Date(startDate + 'T00:00:00');
+  const rangeEnd = new Date(endDate + 'T23:59:59');
+
+  const filteredInvoices = invoices.filter(inv => {
+    const d = new Date(inv.date);
+    return d < rangeStart || d > rangeEnd;
+  });
+
+  const filteredSales = sales.filter(s => {
+    const d = new Date(s.date);
+    return d < rangeStart || d > rangeEnd;
+  });
+
+  const filteredExpenses = expenses.filter(e => {
+    const d = new Date(e.issueDate);
+    return d < rangeStart || d > rangeEnd;
+  });
+
+  const filteredServices = services.filter(s => {
+    const d = new Date(s.issueDate);
+    return d < rangeStart || d > rangeEnd;
+  });
+
+  const filteredInsurance = insurance.filter(i => {
+    const d = new Date(i.issueDate);
+    return d < rangeStart || d > rangeEnd;
+  });
+
+  const filteredAccounts = accounts.filter(a => {
+    const d = new Date(a.date);
+    return d < rangeStart || d > rangeEnd;
+  });
+
+  const filteredStock = stock.filter(s => {
+    const d = new Date(s.date);
+    return d < rangeStart || d > rangeEnd;
+  });
+
+  const result = {
+    invoicesRemoved: invoices.length - filteredInvoices.length,
+    salesRemoved: sales.length - filteredSales.length,
+    expensesRemoved: expenses.length - filteredExpenses.length,
+    servicesRemoved: services.length - filteredServices.length,
+    insuranceRemoved: insurance.length - filteredInsurance.length,
+    currentAccountsRemoved: accounts.length - filteredAccounts.length,
+    stockRemoved: stock.length - filteredStock.length
+  };
+
+  // Save back the filtered data
+  await Promise.all([
+    saveJsonToStorage(filteredInvoices, 'invoices.json'),
+    saveJsonToStorage(filteredSales, 'sales.json'),
+    saveJsonToStorage(filteredExpenses, 'expenses.json'),
+    saveJsonToStorage(filteredServices, 'services.json'),
+    saveJsonToStorage(filteredInsurance, 'insurance.json'),
+    saveJsonToStorage(filteredAccounts, 'current_accounts.json'),
+    saveJsonToStorage(filteredStock, 'stock.json')
+  ]);
+
+  console.log(`[PURGE] Range: ${startDate} to ${endDate} completed.`);
+  return result;
+};
+// --- STOCK FUNCTIONS ---
+
+export const saveStockToDB = async (
+  newStock: StockRecord[],
+  onProgress?: (processed: number, total: number) => void
+): Promise<void> => {
+  if (onProgress) onProgress(0, newStock.length);
+
+  const existingRecords = await getAllStockFromDB();
+  const map = new Map<string, StockRecord>();
+
+  existingRecords.forEach(r => map.set(r.id, r));
+  newStock.forEach(r => map.set(r.id, r));
+
+  const merged = Array.from(map.values());
+  await saveJsonToStorage(merged, 'stock.json');
+
+  if (onProgress) onProgress(newStock.length, newStock.length);
+};
+
+export const getAllStockFromDB = async (): Promise<StockRecord[]> => {
+  const rawData = await loadJsonFromStorage('stock.json');
+  if (!Array.isArray(rawData)) return [];
+  return rawData.map((item: any) => ({
+    ...item,
+    date: new Date(item.date)
+  }));
+};
+
+// --- UNIFIED TRANSACTIONS FUNCTIONS ---
+
+export const saveUnifiedToDB = async (
+  newUnified: UnifiedTransaction[],
+  onProgress?: (processed: number, total: number) => void
+): Promise<void> => {
+  if (onProgress) onProgress(0, newUnified.length);
+
+  const existingRecords = await getAllUnifiedFromDB();
+  const map = new Map<string, UnifiedTransaction>();
+
+  existingRecords.forEach(r => map.set(r.id, r));
+  newUnified.forEach(r => map.set(r.id, r));
+
+  const merged = Array.from(map.values());
+  await saveJsonToStorage(merged, 'unified.json');
+
+  if (onProgress) onProgress(newUnified.length, newUnified.length);
+};
+
+export const getAllUnifiedFromDB = async (): Promise<UnifiedTransaction[]> => {
+  const rawData = await loadJsonFromStorage('unified.json');
+  if (!Array.isArray(rawData)) return [];
+  return rawData.map((item: any) => ({
+    ...item,
+    date: new Date(item.date)
+  }));
+};
