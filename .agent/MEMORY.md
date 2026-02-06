@@ -194,6 +194,14 @@ Estas reglas son de cumplimiento OBLIGATORIO para evitar discrepancias:
     - **Normalización de Estados**: Los estados de Zetti (`PAGADO`, `AGRUPADO`, `LIQUIDADO`, `INGRESADO`) se mapean automáticamente a `PAGADO` (Salida Real) o `INGRESADO` (Pasivo Pendiente).
 - **Herramientas de Control**: Botón de **"Borrar Historial"** en el dashboard de gastos para permitir re-cargas limpias.
 
+### 15. Unificación de Identidad de Vendedores (Zetti ID)
+- **Problema**: Zetti registra a los usuarios de forma inconsistente (ej. "DIAME" vs "OJEDA DIAMELA MARIA").
+- **Solución**: Se implementó una lógica de prioridad en la sincronización:
+    1.  **Nombre Completo**: Si el objeto de usuario tiene descripción, se usa esa.
+    2.  **Mapeo por ID**: Se busca el ID numérico del usuario en la base de datos de empleados local.
+    3.  **Alias**: Último recurso.
+- **Configuración**: En el módulo de RRHH -> Legajos, ahora se puede editar un empleado e ingresar su **Zetti User ID** (ej. `1349400030`). Esto vincula permanentemente al empleado con sus ventas, sin importar cómo Zetti envíe el nombre.
+
 ---
 *Última actualización: 05 de Febrero, 2026 - 12:45hs*
 
@@ -257,4 +265,30 @@ Estas reglas son de cumplimiento OBLIGATORIO para evitar discrepancias:
 - **Menú flotante refinado**: El menú de acciones (agregar fichaje, licencia, banco de horas) ahora aparece como una barra compacta en la parte inferior de cada celda, sin bloquear la visibilidad de los datos existentes.
 - **Prevención de clicks accidentales**: Uso de `stopPropagation()` en botones de acción para evitar conflictos con eventos del contenedor padre.
 
+### 16. Módulo de Obras Sociales e Integridad de Datos (06 de Feb, 2026)
+
+#### A. Rediseño del Insurance Dashboard
+- **Visualización Premium**: Se implementaron "Tarjetas de Deuda por Entidad" con código de colores según antigüedad (Verde < 30d, Ámbar > 30d, Rojo > 60d).
+- **Paginación**: La tabla de detalle ahora carga 10 registros por defecto con un botón de "Mostrar Más" para optimizar el rendimiento.
+- **Filtros Interactivos**: Al hacer clic en una tarjeta de entidad, se filtra automáticamente la tabla inferior.
+
+#### B. Gestión de Datos Manuales (Clear & Import)
+- **Borrado Selectivo**: Se implementó `onClearManualData` que filtra exclusivamente los registros de tipo `DEUDA_HISTORICA`.
+- **Problema de Persistencia (Storage 404)**: Se detectó que al usar `clearInsuranceDB()` (que elimina el archivo físico en Firebase Storage) seguido de un `save`, hay una ventana de tiempo donde las peticiones de lectura devuelven 404, causando que el dashboard parezca vacío o no cargue tras importar.
+- **Solución Propuesta**: Modificar `db.ts` para que "borrar" signifique guardar un array vacío `[]` en lugar de eliminar el objeto, evitando errores de "File Not Found" en el cliente.
+
+#### C. Control de Inflación de Totales (Deduplicación)
+- **Hallazgo**: Se detectaron inconsistencias en "Ventas Totales" y "Gastos Operativos" debido a registros duplicados (posiblemente por múltiples sincronizaciones Zetti o solapamiento de archivos CSV).
+- **Herramienta de Limpieza**: Se agregó un botón **"Eliminar Duplicados de Ventas"** (icono `Blend` amarillo) en la barra lateral.
+- **Lógica de Deduplicación**: Filtra la base de datos local comparando `Comprobante + Producto + Monto + Cantidad`.
+
+#### D. Corrección en Mix Maestro (Doble Contabilidad)
+- **Error Solucionado**: El dashboard sumaba `expenseData` y `serviceData` de forma independiente, pero `serviceData` ya contenía una copia de los gastos.
+- **Corrección**: Se unificó la iteración en `MixMaestroDashboard.tsx` para procesar una sola fuente de egresos, clasificando por estado (`PAGADO` vs `INGRESADO`).
+
+### 17. Estado de Bloqueo Actual y Reversión
+- **Situación**: Tras múltiples intentos de corregir duplicados y flujos de importación manual, el sistema entró en un estado de inconsistencia (datos duplicados persistentes y errores de carga).
+- **Decisión**: Se procede a realizar un **Git Revert / Pull** desde el backup conocido para estabilizar la rama principal antes de re-aplicar las correcciones de lógica financiera de forma controlada.
+
 ---
+*Última actualización: 06 de Febrero, 2026 - 11:30hs*
